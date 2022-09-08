@@ -52,7 +52,7 @@ def main(json_path='options/train_msrresnet_psnr.json'):
     # distributed settings
     # ----------------------------------------
     if opt['dist']:
-        init_dist('pytorch')
+        init_dist('slurm')
     opt['rank'], opt['world_size'] = get_dist_info()
 
     if opt['rank'] == 0:
