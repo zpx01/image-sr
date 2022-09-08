@@ -72,8 +72,8 @@ def main():
     extract_subimages(opt)
 
     # HR validation images
-    opt['input_folder'] = '/trainsets/trainValidH/DIV2K_valid_HR'
-    opt['save_folder'] = '/trainsets/trainValidH/DIV2K_valid_HR_sub'
+    opt['input_folder'] = 'trainsets/trainValidH/DIV2K_valid_HR'
+    opt['save_folder'] = 'trainsets/trainValidH/DIV2K_valid_HR_sub'
     opt['crop_size'] = 480
     opt['step'] = 240
     opt['thresh_size'] = 0
