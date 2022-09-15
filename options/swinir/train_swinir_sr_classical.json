@@ -17,8 +17,8 @@
     "train": {
       "name": "train_dataset"           // just name
       , "dataset_type": "sr"         // "dncnn" | "dnpatch" | "fdncnn" | "ffdnet" | "sr" | "srmd" | "dpsr" | "plain" | "plainpatch" | "jpeg"
-      , "dataroot_H": "trainsets/trainH"// path of H training dataset. DIV2K (800 training images)
-      , "dataroot_L": "trainsets/trainL"              // path of L training dataset
+      , "dataroot_H": "trainH/DIV2K_train_HR_sub"// path of H training dataset. DIV2K (800 training images)
+      , "dataroot_L": "trainsets/trainL/DIV2K_train_LR_bicubic/X2_sub"              // path of L training dataset
 
       , "H_size": 96                   // 96/144|192/384 | 128/192/256/512. LR patch size is set to 48 or 64 when compared with RCAN or RRDB.
 
