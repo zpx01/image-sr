@@ -175,7 +175,7 @@ def main(json_path='options/train_msrresnet_psnr.json'):
             # -------------------------------
             # 1) update learning rate
             # -------------------------------
-            model.update_learning_rate(current_step)
+            # model.update_learning_rate(current_step)
 
             # -------------------------------
             # 2) feed patch pairs
@@ -218,6 +218,7 @@ def main(json_path='options/train_msrresnet_psnr.json'):
                     img_name, ext = os.path.splitext(image_name_ext)
 
                     img_dir = os.path.join(opt['path']['images'], img_name)
+                    print(img_dir)
                     util.mkdir(img_dir)
 
                     model.feed_data(test_data)
@@ -226,11 +227,50 @@ def main(json_path='options/train_msrresnet_psnr.json'):
                     visuals = model.current_visuals()
                     E_img = util.tensor2uint(visuals['E'])
                     H_img = util.tensor2uint(visuals['H'])
+                    print("E_img =", E_img.shape, " H_img =",  H_img.shape)
+                    if E_img.shape != H_img.shape:
+                        if (E_img.shape[0] == H_img.shape[0] and \
+                            E_img.shape[1] != H_img.shape[1]):
+                            if E_img.shape[1] < H_img.shape[1]:
+                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                                E_img = np.pad(E_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
+                            else:
+                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                                H_img = np.pad(H_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
+                        elif (E_img.shape[1] == H_img.shape[1] and \
+                            E_img.shape[0] != H_img.shape[0]):
+                            if E_img.shape[0] < H_img.shape[0]:
+                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                                E_img = np.pad(E_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
+                            else:
+                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                                H_img = np.pad(H_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
+                        elif E_img.shape[0] > H_img.shape[0]:
+                            # Pad H_img
+                            diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                            diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                            extra_left, extra_right = diff_x//2, diff_y//2
+                            extra_top, extra_bottom = diff_x//2, diff_y//2
+                            H_img = np.pad(H_img, ((extra_top, extra_bottom), (extra_left, extra_right), (0, 0)))
+                        else:
+                            # Pad E_img
+                            diff_x = abs(E_img.shape[0] - H_img.shape[0])
+                            diff_y = abs(E_img.shape[1] - H_img.shape[1])
+                            extra_left, extra_right = diff_x//2, diff_y//2
+                            extra_top, extra_bottom = diff_x//2, diff_y//2
+                            E_img = np.pad(E_img, ((extra_top, extra_bottom), (extra_left, extra_right), (0, 0)))
+                            # Pad H_img if dims still don't match
+                    print("E_img =", E_img.shape, " H_img =",  H_img.shape)
 
                     # -----------------------
                     # save estimated image E
                     # -----------------------
                     save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, current_step))
+                    print("Estimated Image saved at:", save_img_path)
                     util.imsave(E_img, save_img_path)
 
                     # -----------------------

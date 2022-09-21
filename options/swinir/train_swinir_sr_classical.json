@@ -26,13 +26,13 @@
       , "dataloader_num_workers": 16
       , "dataloader_batch_size": 32      // batch size 1 | 16 | 32 | 48 | 64 | 128. Total batch size =4x8=32 in SwinIR
     }
-    // , "test": {
-    //   "name": "test_dataset"            // just name
-    //   , "dataset_type": "sr"         // "dncnn" | "dnpatch" | "fdncnn" | "ffdnet" | "sr" | "srmd" | "dpsr" | "plain" | "plainpatch" | "jpeg"
-    //   , "dataroot_H": "testsets/set5"  // path of H testing dataset
-    //   , "dataroot_L": "testsets/set5"              // path of L testing dataset
+    , "test": {
+      "name": "test_dataset"            // just name
+      , "dataset_type": "sr"         // "dncnn" | "dnpatch" | "fdncnn" | "ffdnet" | "sr" | "srmd" | "dpsr" | "plain" | "plainpatch" | "jpeg"
+      , "dataroot_H": "testsets/Set5/original"  // path of H testing dataset
+      , "dataroot_L": "testsets/Set5/LRbicx2"              // path of L testing dataset
 
-    // }
+    }
   }
 
   , "netG": {
