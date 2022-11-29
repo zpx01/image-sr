@@ -6,13 +6,14 @@ from test_time_config import Config
 import torch.utils.data as data
 import utils.utils_image as util
 
-"""
-A DataLoader class for test-time training.
-This class generates augmentations of test images
-during test-time so that you can train/fine-tune your
-model in real time.
-"""
+
 class DataLoaderPretrained(data.Dataset):
+    """
+    A DataLoader class for test-time training.
+    This class generates augmentations of test images
+    during test-time so that you can train/fine-tune your
+    model in real time.
+    """
     def __init__(self, input_img, conf=Config(), sf=2, kernel=None):
         super(DataLoaderPretrained, self).__init__()
         self.input_img = input_img
