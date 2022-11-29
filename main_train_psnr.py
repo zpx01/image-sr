@@ -107,13 +107,13 @@ def main(json_path='options/train_msrresnet_psnr.json'):
 
     '''
     # ----------------------------------------
-    # Step--2 (creat dataloader)
+    # Step--2 (create dataloader)
     # ----------------------------------------
     '''
 
     # ----------------------------------------
     # 1) create_dataset
-    # 2) creat_dataloader for train and test
+    # 2) create_dataloader for train and test
     # ----------------------------------------
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
@@ -173,19 +173,19 @@ def main(json_path='options/train_msrresnet_psnr.json'):
             current_step += 1
 
             # -------------------------------
-            # 1) update learning rate
-            # -------------------------------
-            # model.update_learning_rate(current_step)
-
-            # -------------------------------
-            # 2) feed patch pairs
+            # 1) feed patch pairs
             # -------------------------------
             model.feed_data(train_data)
 
             # -------------------------------
-            # 3) optimize parameters
+            # 2) optimize parameters
             # -------------------------------
             model.optimize_parameters(current_step)
+
+            # -------------------------------
+            # 3) update learning rate
+            # -------------------------------
+            model.update_learning_rate(current_step)
 
             # -------------------------------
             # 4) training information
@@ -227,44 +227,6 @@ def main(json_path='options/train_msrresnet_psnr.json'):
                     visuals = model.current_visuals()
                     E_img = util.tensor2uint(visuals['E'])
                     H_img = util.tensor2uint(visuals['H'])
-                    print("E_img =", E_img.shape, " H_img =",  H_img.shape)
-                    if E_img.shape != H_img.shape:
-                        if (E_img.shape[0] == H_img.shape[0] and \
-                            E_img.shape[1] != H_img.shape[1]):
-                            if E_img.shape[1] < H_img.shape[1]:
-                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                                E_img = np.pad(E_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
-                            else:
-                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                                H_img = np.pad(H_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
-                        elif (E_img.shape[1] == H_img.shape[1] and \
-                            E_img.shape[0] != H_img.shape[0]):
-                            if E_img.shape[0] < H_img.shape[0]:
-                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                                E_img = np.pad(E_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
-                            else:
-                                diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                                diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                                H_img = np.pad(H_img, ((diff_x//2, diff_x//2), (diff_y//2, diff_y//2), (0, 0)))
-                        elif E_img.shape[0] > H_img.shape[0]:
-                            # Pad H_img
-                            diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                            diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                            extra_left, extra_right = diff_x//2, diff_y//2
-                            extra_top, extra_bottom = diff_x//2, diff_y//2
-                            H_img = np.pad(H_img, ((extra_top, extra_bottom), (extra_left, extra_right), (0, 0)))
-                        else:
-                            # Pad E_img
-                            diff_x = abs(E_img.shape[0] - H_img.shape[0])
-                            diff_y = abs(E_img.shape[1] - H_img.shape[1])
-                            extra_left, extra_right = diff_x//2, diff_y//2
-                            extra_top, extra_bottom = diff_x//2, diff_y//2
-                            E_img = np.pad(E_img, ((extra_top, extra_bottom), (extra_left, extra_right), (0, 0)))
-                            # Pad H_img if dims still don't match
-                    print("E_img =", E_img.shape, " H_img =",  H_img.shape)
 
                     # -----------------------
                     # save estimated image E
