@@ -24,7 +24,7 @@ class DataLoaderPretrained(data.Dataset):
     def generate_hr_father(self):
         return random_augment(ims=self.hr_father_sources,
                                             base_scales=[1.0] + self.conf.scale_factors,
-                                            leave_as_is_probability=self.conf.augment_leave_as_is_probability,
+                                            leave_as_is_probability=1,
                                             no_interpolate_probability=self.conf.augment_no_interpolate_probability,
                                             min_scale=self.conf.augment_min_scale,
                                             max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_father_sources)-1],
@@ -48,7 +48,7 @@ class DataLoaderPretrained(data.Dataset):
             self.lr.append(lr_son)
     
     def __getitem__(self, index):
-        # Generate some image pairs
+        # generate some image pairs
         self.generate_pairs(index)
         return self.lr[index], self.hr[index]
     
