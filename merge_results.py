@@ -15,8 +15,8 @@ class MergeResults(object):
     image categories.
     """
     def __init__(self, model_path_1, model_path_2, gt_path):
-        self.model_path_1 = model_path_1 # original pretrained model
-        self.model_path_2 = model_path_2 # ttt model
+        self.model_path_1 = model_path_1 # original pretrained model inference
+        self.model_path_2 = model_path_2 # ttt model inference 
         self.gt_path = gt_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.psnr_values = defaultdict(list)
@@ -77,10 +77,10 @@ class MergeResults(object):
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MergeResults - Classical SR', add_help=False)
-    parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model')
-    parser.add_argument('--ttt_dir', type=str, help='path to TTT model')
-    parser.add_argument('--gt_dir', type=str, help='path to ground truth directory')
-    parser.add_argument('--results_log', type=str, help='file to save metrics')
+    parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model inference image')
+    parser.add_argument('--ttt_dir', type=str, help='path to TTT model inference image')
+    parser.add_argument('--gt_dir', type=str, help='path to ground truth image')
+    # parser.add_argument('--results_log', type=str, help='file to save metrics') # Not supported yet
     return parser
 
 def main(args):
