@@ -1,22 +1,4 @@
-opencv-python
-scikit-image
-pillow
-torchvision
-hdf5storage
-ninja
-lmdb
-requests
-timm
-einops
-addict
-future
-lmdb
-numpy>=1.17
-Pillow
-pyyaml
-requests
-scipy
-tb-nightly
-torch>=1.7
-tqdm
-yapf
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: linux-64
+
