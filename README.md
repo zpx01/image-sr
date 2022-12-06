@@ -12,6 +12,9 @@ Please run the following command to install these dependencies as well:
 ```bash
 pip3 install opencv-python oauthlib hdf5storage ninja lmdb requests timm einops pillow
 ```
+\
+For the datasets, please check the [`trainsets`](trainsets) and  [`testsets`](testsets) folder. The training data has been obtained from the
+[`DIV2K`](https://data.vision.ee.ethz.ch/cvl/DIV2K/) dataset and the testsets include [`Set5`](testsets/Set5), [`Set14`](testsets/Set14), and [`BSD100`](testsets/BSD_100/). 
 
 ### Training SwinIR
 To train the base SwinIR model, please edit the [`train_swinir_sr_classical.json`](options/swinir/train_swinir_sr_classical.json) file with your desired parameters. The file is currently set up for distributed training on the cluster for a 4X SR model. To run the training, please submit a batch job:
