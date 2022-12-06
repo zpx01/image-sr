@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import argparse
-import cv2
+import sys
 import glob
 import numpy as np
 import torch
@@ -10,6 +10,7 @@ import os.path
 import time
 import random
 from data_loader import DataLoaderPretrained
+import cv2
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Test Time Training - Classical SR', add_help=False)

@@ -15,10 +15,11 @@ class MergeResults(object):
     a new, merged inference. It provides the PSNR and SSIM for each of the three
     image categories.
     """
-    def __init__(self, model_path_1, model_path_2, gt_path):
+    def __init__(self, model_path_1, model_path_2, gt_path, merged_img_path):
         self.model_path_1 = model_path_1 # original pretrained model inference
         self.model_path_2 = model_path_2 # ttt model inference 
         self.gt_path = gt_path
+        self.merged_img_path = merged_img_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.psnr_values = defaultdict(list)
         self.ssim_values = defaultdict(list)
@@ -50,6 +51,9 @@ class MergeResults(object):
                 elif norm2 < norm1:
                     merged_img[i][j] = img2[i][j]
 
+        # save merged image
+        mpimg.imsave(self.merged_img_path, merged_img)
+        
         # compute merged PSNR/SSIM values
         merged_psnr = self.psnr(gt, merged_img)
         merged_ssim = self.ssim(gt, merged_img)
@@ -81,6 +85,7 @@ def get_args_parser():
     parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model inference image')
     parser.add_argument('--ttt_dir', type=str, help='path to TTT model inference image')
     parser.add_argument('--gt_dir', type=str, help='path to ground truth image')
+    parser.add_argument('--merged_img_path', type=str, help='file path to save new merged image as')
     parser.add_argument('--results_log', type=str, help='path to text file to save metrics')
     return parser
 
@@ -104,7 +109,7 @@ def main(args):
     test_psnr_vals = defaultdict(list)
     test_ssim_vals = defaultdict(list)
     for i in range(len(test_img_paths)):
-        mr = MergeResults(model_1_img_paths[i], model_2_img_paths[i], test_img_paths[i])
+        mr = MergeResults(model_1_img_paths[i], model_2_img_paths[i], test_img_paths[i], args.merged_img_path)
         mr.merge_results()
 
         for key, val in mr.psnr_values.items():
