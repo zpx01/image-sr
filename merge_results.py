@@ -6,6 +6,7 @@ from collections import defaultdict
 import torch
 import skimage
 
+res_strs = []
 class MergeResults(object):
     """
     MergeResults takes outputs of two classical SR models, one with test-time
@@ -24,18 +25,19 @@ class MergeResults(object):
     
     def merge_results(self):
         # load images
+        global res_strs
         img1 = mpimg.imread(self.model_path_1)
         img2 = mpimg.imread(self.model_path_2)
         gt = mpimg.imread(self.gt_path)
 
         (imgname, imgext) = os.path.splitext(os.path.basename(self.gt_path))
-        print(f"Testing {imgname}...")
+        s = f"Testing {imgname} ({self.gt_path})...\n"
+        print(s)
+        res_strs.append(s)
 
         # compute individual PSNR/SSIM values
         original_psnr, ttt_psnr = self.psnr(gt, img1), self.psnr(gt, img2)
         original_ssim, ttt_ssim = self.ssim(gt, img1), self.ssim(gt, img2)
-        print("Original Model PSNR:", original_psnr, "; Original Model SSIM:", original_ssim)
-        print("TTT Model PSNR:", ttt_psnr, "; TTT Model SSIM:", ttt_ssim)
 
         # create merged image
         merged_img = np.zeros(shape=gt.shape, dtype=np.float32)
@@ -51,7 +53,6 @@ class MergeResults(object):
         # compute merged PSNR/SSIM values
         merged_psnr = self.psnr(gt, merged_img)
         merged_ssim = self.ssim(gt, merged_img)
-        print("Merged Image PSNR:", merged_psnr, "; Merged Model SSIM:", merged_ssim, '\n')
 
         # save metrics
         self.psnr_values["original"].append(original_psnr)
@@ -67,7 +68,7 @@ class MergeResults(object):
         return psnr
     
     def ssim(self, img_gt, output):
-        ssim = skimage.metrics.structural_similarity(img_gt, output)
+        ssim = skimage.metrics.structural_similarity(img_gt, output, channel_axis=1, multichannel=True)
         ssim = float('{:.2f}'.format(ssim))
         return ssim
 
@@ -80,10 +81,11 @@ def get_args_parser():
     parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model inference image')
     parser.add_argument('--ttt_dir', type=str, help='path to TTT model inference image')
     parser.add_argument('--gt_dir', type=str, help='path to ground truth image')
-    # parser.add_argument('--results_log', type=str, help='file to save metrics') # Not supported yet
+    parser.add_argument('--results_log', type=str, help='path to text file to save metrics')
     return parser
 
 def main(args):
+    global res_strs
     test_img_folder = args.gt_dir
     test_img_paths = []
     for idx, path in enumerate(sorted(glob.glob(os.path.join(test_img_folder, '*')))):
@@ -99,17 +101,47 @@ def main(args):
     for idx, path in enumerate(sorted(glob.glob(os.path.join(model_2_results_dir, '*')))):
         model_2_img_paths.append(path)
 
+    test_psnr_vals = defaultdict(list)
+    test_ssim_vals = defaultdict(list)
     for i in range(len(test_img_paths)):
         mr = MergeResults(model_1_img_paths[i], model_2_img_paths[i], test_img_paths[i])
         mr.merge_results()
 
-    for key, val in mr.psnr_values.items():
-        if key == 'original':
-            print("Original Avg PSNR:", np.mean(val), "; Original Avg SSIM:", np.mean(mr.ssim_values[key]))
-        elif key == 'ttt':
-            print("TTT Avg PSNR:", np.mean(val), "; TTT Avg SSIM:", np.mean(mr.ssim_values[key]))
-        else:
-            print("Merged Avg PSNR:", np.mean(val), "; Merged Avg SSIM:", np.mean(mr.ssim_values[key]))
+        for key, val in mr.psnr_values.items():
+            if key == 'original':
+                test_psnr_vals['original'].append(val[i])
+                test_ssim_vals['original'].append(mr.ssim_values[key][i])
+                s = f"Original PSNR: {val[i]}; Original SSIM: {mr.ssim_values[key][i]}\n"
+                res_strs.append(s)
+                print(s)
+            elif key == 'ttt':
+                test_psnr_vals['ttt'].append(val[i])
+                test_ssim_vals['ttt'].append(mr.ssim_values[key][i])
+                s = f"TTT PSNR: {val[i]}; TTT SSIM: {mr.ssim_values[key][i]}\n"
+                res_strs.append(s)
+                print(s)
+            else:
+                test_psnr_vals['merged'].append(val[i])
+                test_ssim_vals['merged'].append(mr.ssim_values[key][i])
+                s = f"Merged PSNR: {val[i]}; Merged SSIM: {mr.ssim_values[key][i]}\n"
+                res_strs.append(s)
+                print(s)
+    s = f'\n\nAverage Statistics for Test Set:\n'
+    res_strs.append(s)
+    print(s)
+    s = f"Original Average PSNR: {np.mean(test_psnr_vals['original'])}; Original Average SSIM: {np.mean(test_ssim_vals['original'])}\n"
+    res_strs.append(s)
+    print(s)
+    s = f"TTT Average PSNR: {np.mean(test_psnr_vals['ttt'])}; TTT Average SSIM: {np.mean(test_ssim_vals['ttt'])}\n"
+    res_strs.append(s)
+    print(s)
+    s = f"Merged Average PSNR: {np.mean(test_psnr_vals['merged'])}; Merged Average SSIM: {np.mean(test_ssim_vals['merged'])}\n"
+    res_strs.append(s)
+    print(s)
+    res_strs.append('\n')
+    res_file = open(args.results_log, 'w')
+    res_file.writelines(res_strs)
+    res_file.close()
 
 if __name__ == '__main__':
     args = get_args_parser()
