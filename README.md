@@ -23,7 +23,71 @@ If you would like to edit the training job time, machine, or GPU devices, please
 We have provided model weights for 4x SwinIR in the [`superresolution`](superresolution/swinir_sr_classical_patch48_x4/models) folder.
 
 ### Training TTT Models
+TTT model checkpoints can be trained using [`main_train_test_time.py`](main_train_test_time.py). To use the file, you can run the following command:
+```bash
+MODEL_PATH='...'
+OPTIMIZER_PATH='...'
+TESTSET_DIR='...'
+OUTPUT_DIR='...'
+python3  -m torch.distributed.launch --nproc_per_node=8 main_test_time.py \
+        --model_path ${MODEL_PATH} \
+        --opt_path ${OPTIMIZER_PATH} \
+        --scale 4 \
+        --num_images 10 \
+        --epochs 5 \
+        --test_dir ${TESTSET_DIR} \
+        --output_dir ${OUTPUT_DIR}
+```
+We will use these TTT models to generate new TTT inferences in the next section. 
 
+### Model Inference
+To test the models you have trained, you may run the following commands:
+For SwinIR Inference:\
+```bash
+TASK='classical_sr'
+TYPE='swinir'
+MODEL_PATH='...' # SwinIR pretrained model path
+TEST_FOLDER_LQ='...' # Low quality images for testing
+TEST_FOLDER_GT='...' # High quality ground truth images
+RESULTS_PATH='...' # Path to text file to save metrics
+IMG_ID='...' # Unique identifier to use for saved image file paths
+python3 main_test_swinir.py \
+        --task ${TASK} \
+        --type ${TYPE} \
+        --scale 4 \
+        --training_patch_size 48 \
+        --model_path ${MODEL_PATH} \
+        --folder_lq ${TEST_FOLDER_LQ} \
+        --folder_gt ${TEST_FOLDER_GT} \
+        --results_path ${RESULTS_PATH} \
+        --img_identifier ${IMG_ID}
+```
+\
+For TTT inference:
+```bash
+TASK='classical_sr'
+TYPE='ttt'
+MODELS_DIR='...' # Directory containing all TTT checkpoints to test
+TEST_FOLDER_LQ='...' # Low quality images for testing
+TEST_FOLDER_GT='...' # High quality ground truth images
+RESULTS_PATH='...' # Path to text file to save metrics
+IMG_ID='...' # Unique identifier to use for saved image file paths
+python3 main_test_swinir.py \
+        --task ${TASK} \
+        --type ${TYPE} \
+        --scale 4 \
+        --training_patch_size 48 \
+        --models_dir ${MODELS_DIR} \
+        --folder_lq ${TEST_FOLDER_LQ} \
+        --folder_gt ${TEST_FOLDER_GT} \
+        --results_path ${RESULTS_PATH} \
+        --img_identifier ${IMG_ID}
+```
+\
+Your results will be saved in `results/swinir_{TASK}_x{SCALE}_{IMG_ID}`.
 
+### Merging Model Results
+
+       
 
 
