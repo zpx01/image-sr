@@ -26,7 +26,7 @@ If you would like to edit the training job time, machine, or GPU devices, please
 We have provided model weights for 4x SwinIR in the [`superresolution`](superresolution/swinir_sr_classical_patch48_x4/models) folder.
 
 ### Training TTT Models
-TTT model checkpoints can be trained using [`main_train_test_time.py`](main_train_test_time.py). To use the file, you can run the following command:
+TTT model checkpoints can be trained using [`main_test_time.py`](main_test_time.py). To use the file, you can run the following command:
 ```bash
 MODEL_PATH='...'
 OPTIMIZER_PATH='...'
