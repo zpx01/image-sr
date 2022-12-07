@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--models_dir', type=str, default=None, help='use this only for ttt, enter the path of the directory containing the ttt models')
     parser.add_argument('--folder_lq', type=str, default=None, help='input low-quality test image folder')
     parser.add_argument('--folder_gt', type=str, default=None, help='input ground-truth test image folder')
-    parser.add_argument('--results_path', type=str, default='results.txt', help='path to results text file for metrics', required=True)
+    parser.add_argument('--results_path', type=str, default=None, help='folder to save test results', required=True)
     parser.add_argument('--img_identifier', type=str, default=None, help='identifier for test image results', required=True)
     parser.add_argument('--tile', type=int, default=None, help='Tile size, None for no tile during testing (testing as a whole)')
     parser.add_argument('--tile_overlap', type=int, default=32, help='Overlapping of different tiles')
@@ -56,7 +56,7 @@ def main():
     psnr, ssim, psnr_y, ssim_y, psnr_b = 0, 0, 0, 0, 0
     img_gt = None
     res_strs = []
-    results_file_path = args.results_path
+    results_file_path = f'{args.results_path}/{args.type}_{args.img_identifier}.txt'
     if args.type == 'swinir':
         print("Starting SwinIR Testing...")
         model = define_model(args)
@@ -309,7 +309,7 @@ def setup(args):
 
     # 003 real-world image sr
     elif args.task in ['real_sr']:
-        save_dir = f'results/swinir_{args.task}_x{args.scale}'
+        save_dir = f'{args.results_path}/swinir_{args.task}_x{args.scale}'
         if args.large_model:
             save_dir += '_large'
         folder = args.folder_lq
@@ -336,13 +336,15 @@ def setup(args):
 def get_image_pair(args, path):
     print("args:", args, "path:", path)
     (imgname, imgext) = os.path.splitext(os.path.basename(path))
+    print("PATH:", path)
     print(imgname, imgext)
 
     # 001 classical image sr/ 002 lightweight image sr (load lq-gt image pairs)
     if args.task in ['classical_sr', 'lightweight_sr']:
         img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
         if 'HR' not in imgname:
-            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
+            # print(f'{args.folder_lq}/{imgname}{imgext}')
+            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}x4{imgext}', cv2.IMREAD_COLOR).astype(
                 np.float32) / 255.
         else:
             print(f'Full Path: {args.folder_lq}/{imgname[0:len(imgname)-2]}{imgext}')

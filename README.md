@@ -52,7 +52,7 @@ TYPE='swinir'
 MODEL_PATH='...' # SwinIR pretrained model path
 TEST_FOLDER_LQ='...' # Low quality images for testing
 TEST_FOLDER_GT='...' # High quality ground truth images
-RESULTS_PATH='...' # Path to text file to save metrics
+RESULTS_PATH='...' # Path to folder to save results in
 IMG_ID='...' # Unique identifier to use for saved image file paths
 python3 main_test_swinir.py \
         --task ${TASK} \
@@ -73,7 +73,7 @@ TYPE='ttt'
 MODELS_DIR='...' # Directory containing all TTT checkpoints to test
 TEST_FOLDER_LQ='...' # Low quality images for testing
 TEST_FOLDER_GT='...' # High quality ground truth images
-RESULTS_PATH='...' # Path to text file to save metrics
+RESULTS_PATH='...' # Path to folder to save results in
 IMG_ID='...' # Unique identifier to use for saved image file paths
 python3 main_test_swinir.py \
         --task ${TASK} \
