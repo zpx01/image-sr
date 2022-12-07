@@ -21,6 +21,7 @@ def get_args_parser():
     parser.add_argument('--epochs', default=5, type=int)
     parser.add_argument('--test_dir', type=str, help='testset location') 
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
+    parser.add_argument('--reset', type=bool, default=True, help='set to False if you do not want to reset optimizer')
     return parser
 
 def main(args):
@@ -77,6 +78,9 @@ def main(args):
             if (epoch) % 2 == 0:
                 torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
+        if args.reset:
+            optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
+
     
 
 def optimizer_to(optim, device):
