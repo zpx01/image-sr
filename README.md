@@ -95,12 +95,13 @@ In order to use your results from TTT, we've create the MergeResults class in [`
 PRETRAINED_DIR='...' # Directory with pretrained inference images
 TTT_DIR='...' # Directory with TTT inference images
 GT_DIR='...' # Directory with ground truth images
-MERGED_SAVE_PATH='...' # File path to save merged image as (must include .png extension in file name)
+MERGED_DIR='...' # Directory to store merged results in
 RESULTS_LOG='...' # File path for text file to store result metrics
 python3 merge_results.py \
         --pretrained_dir ${PRETRAINED_DIR} \
         --ttt_dir ${TTT_DIR} \
         --gt_dir ${GT_DIR} \
+        --merged_dir ${MERGED_DIR} \
         --results_log ${RESULTS_LOG}
 ```
 To make sure the script will run as intended, please make sure that the corresponding pretrained, ttt, and gt images are in the correct order in their directories (if the first pretrained image in the pretrained directory is img1, then the first image in the ttt and gt directories must also be img1). 
