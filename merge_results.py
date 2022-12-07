@@ -82,10 +82,10 @@ class MergeResults(object):
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MergeResults - Classical SR', add_help=False)
-    parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model inference image')
-    parser.add_argument('--ttt_dir', type=str, help='path to TTT model inference image')
-    parser.add_argument('--gt_dir', type=str, help='path to ground truth image')
-    parser.add_argument('--merged_img_path', type=str, help='file path to save new merged image as')
+    parser.add_argument('--pretrained_dir', type=str, help='path to base pretrained model inference images')
+    parser.add_argument('--ttt_dir', type=str, help='path to TTT model inference images')
+    parser.add_argument('--gt_dir', type=str, help='path to ground truth images')
+    parser.add_argument('--merged_dir', type=str, help='path to directory for merged image results')
     parser.add_argument('--results_log', type=str, help='path to text file to save metrics')
     return parser
 
@@ -109,26 +109,27 @@ def main(args):
     test_psnr_vals = defaultdict(list)
     test_ssim_vals = defaultdict(list)
     for i in range(len(test_img_paths)):
-        mr = MergeResults(model_1_img_paths[i], model_2_img_paths[i], test_img_paths[i], args.merged_img_path)
+        (imgname, imgext) = os.path.splitext(os.path.basename(test_img_paths[i]))
+        merged_path = f'{args.merged_dir}/{imgname}_merged{imgext}'
+        mr = MergeResults(model_1_img_paths[i], model_2_img_paths[i], test_img_paths[i], merged_path)
         mr.merge_results()
-
         for key, val in mr.psnr_values.items():
             if key == 'original':
-                test_psnr_vals['original'].append(val[i])
-                test_ssim_vals['original'].append(mr.ssim_values[key][i])
-                s = f"Original PSNR: {val[i]}; Original SSIM: {mr.ssim_values[key][i]}\n"
+                test_psnr_vals['original'].append(val[0])
+                test_ssim_vals['original'].append(mr.ssim_values[key][0])
+                s = f"Original PSNR: {val[0]}; Original SSIM: {mr.ssim_values[key][0]}\n"
                 res_strs.append(s)
                 print(s)
             elif key == 'ttt':
-                test_psnr_vals['ttt'].append(val[i])
-                test_ssim_vals['ttt'].append(mr.ssim_values[key][i])
-                s = f"TTT PSNR: {val[i]}; TTT SSIM: {mr.ssim_values[key][i]}\n"
+                test_psnr_vals['ttt'].append(val[0])
+                test_ssim_vals['ttt'].append(mr.ssim_values[key][0])
+                s = f"TTT PSNR: {val[0]}; TTT SSIM: {mr.ssim_values[key][0]}\n"
                 res_strs.append(s)
                 print(s)
             else:
-                test_psnr_vals['merged'].append(val[i])
-                test_ssim_vals['merged'].append(mr.ssim_values[key][i])
-                s = f"Merged PSNR: {val[i]}; Merged SSIM: {mr.ssim_values[key][i]}\n"
+                test_psnr_vals['merged'].append(val[0])
+                test_ssim_vals['merged'].append(mr.ssim_values[key][0])
+                s = f"Merged PSNR: {val[0]}; Merged SSIM: {mr.ssim_values[key][0]}\n\n"
                 res_strs.append(s)
                 print(s)
     s = f'\n\nAverage Statistics for Test Set:\n'

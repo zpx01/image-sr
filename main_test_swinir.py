@@ -26,8 +26,8 @@ def main():
     parser.add_argument('--models_dir', type=str, default=None, help='use this only for ttt, enter the path of the directory containing the ttt models')
     parser.add_argument('--folder_lq', type=str, default=None, help='input low-quality test image folder')
     parser.add_argument('--folder_gt', type=str, default=None, help='input ground-truth test image folder')
-    parser.add_argument('--results_path', type=str, default=None, help='folder to save test results', required=True)
-    parser.add_argument('--img_identifier', type=str, default=None, help='identifier for test image results', required=True)
+    parser.add_argument('--results_path', type=str, default=None, help='folder to save test results')
+    parser.add_argument('--img_identifier', type=str, default=None, help='identifier for test image results')
     parser.add_argument('--tile', type=int, default=None, help='Tile size, None for no tile during testing (testing as a whole)')
     parser.add_argument('--tile_overlap', type=int, default=32, help='Overlapping of different tiles')
     args = parser.parse_args()
@@ -61,6 +61,7 @@ def main():
         print("Starting SwinIR Testing...")
         model = define_model(args)
         model = model.to(device)
+        print(args.model_path)
         pretrained_model = torch.load(args.model_path)
         param_key_g = 'params'
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
@@ -150,7 +151,7 @@ def main():
         for idx, model_path in enumerate(sorted(glob.glob(os.path.join(args.models_dir, '*')))):
             model = define_model(args)
             model = model.to(device)
-            pretrained_model = torch.load(model_path)
+            # pretrained_model = torch.load(model_path)
             param_key_g = 'params'
             model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
             model.eval()
@@ -344,7 +345,7 @@ def get_image_pair(args, path):
         img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
         if 'HR' not in imgname:
             # print(f'{args.folder_lq}/{imgname}{imgext}')
-            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}x4{imgext}', cv2.IMREAD_COLOR).astype(
+            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
                 np.float32) / 255.
         else:
             print(f'Full Path: {args.folder_lq}/{imgname[0:len(imgname)-2]}{imgext}')
