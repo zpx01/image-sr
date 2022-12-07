@@ -1,1 +1,4 @@
 trainsets
+testsets
+*/__pycache__/*
+*/.ipynb_checkpoints/*

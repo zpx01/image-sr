@@ -39,17 +39,53 @@ conda activate image-sr
 export PYTHONUNBUFFERED=1
 
 # Do all the research.
-MODEL_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_G.pth'
-OPTIMIZER_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_optimizerG.pth'
-TESTSET_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidL/DIV2K_valid_LR_bicubic/X4/'
-OUTPUT_DIR='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_ttt_train_patch48_x4/'
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 10 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR}
+# MODEL_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_G.pth'
+# OPTIMIZER_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_optimizerG.pth'
+# TESTSET_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidL/DIV2K_valid_LR_bicubic/X4/'
+# OUTPUT_DIR='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_ttt_train_patch48_x4/'
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 10 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR}
 # Print completion time.
-date
+
+
+TASK='classical_sr'
+TYPE='ttt'
+MODELS_DIR='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_ttt_train_patch48_x4/' # Directory containing all TTT checkpoints to test
+TEST_FOLDER_LQ='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidL/DIV2K_valid_LR_bicubic/X4' # Low quality images for testing
+TEST_FOLDER_GT='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidH/DIV2K_valid_HR' # High quality ground truth images
+RESULTS_PATH='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/' # Path to text file to save metrics
+IMG_ID='12_6_22_ttt' # Unique identifier to use for saved image file paths
+python3 main_test_swinir.py \
+        --task ${TASK} \
+        --type ${TYPE} \
+        --scale 4 \
+        --training_patch_size 48 \
+        --models_dir ${MODELS_DIR} \
+        --folder_lq ${TEST_FOLDER_LQ} \
+        --folder_gt ${TEST_FOLDER_GT} \
+        --results_path ${RESULTS_PATH} \
+        --img_identifier ${IMG_ID}
+
+TASK='classical_sr'
+TYPE='swinir'
+MODEL_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_G.pth' # SwinIR pretrained model path
+TEST_FOLDER_LQ='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidL/DIV2K_valid_LR_bicubic/X4' # Low quality images for testing
+TEST_FOLDER_GT='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidH/DIV2K_valid_HR' # High quality ground truth images
+RESULTS_PATH='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/' # Path to text file to save metrics
+IMG_ID='12_6_22_orig' # Unique identifier to use for saved image file paths
+python3 main_test_swinir.py \
+        --task ${TASK} \
+        --type ${TYPE} \
+        --scale 4 \
+        --training_patch_size 48 \
+        --model_path ${MODEL_PATH} \
+        --folder_lq ${TEST_FOLDER_LQ} \
+        --folder_gt ${TEST_FOLDER_GT} \
+        --results_path ${RESULTS_PATH} \
+        --img_identifier ${IMG_ID}

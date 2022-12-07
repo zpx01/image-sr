@@ -302,7 +302,7 @@ def define_model(args):
 def setup(args):
     # 001 classical image sr/ 002 lightweight image sr
     if args.task in ['classical_sr', 'lightweight_sr']:
-        save_dir = f'results/swinir_{args.task}_x{args.scale}_{args.img_identifier}'
+        save_dir = f'{args.results_path}/swinir_{args.task}_x{args.scale}_{args.img_identifier}'
         folder = args.folder_gt
         border = args.scale
         window_size = 8
@@ -318,14 +318,14 @@ def setup(args):
 
     # 004 grayscale image denoising/ 005 color image denoising
     elif args.task in ['gray_dn', 'color_dn']:
-        save_dir = f'results/swinir_{args.task}_noise{args.noise}'
+        save_dir = f'{args.results_path}/swinir_{args.task}_noise{args.noise}'
         folder = args.folder_gt
         border = 0
         window_size = 8
 
     # 006 JPEG compression artifact reduction
     elif args.task in ['jpeg_car']:
-        save_dir = f'results/swinir_{args.task}_jpeg{args.jpeg}'
+        save_dir = f'{args.results_path}/swinir_{args.task}_jpeg{args.jpeg}'
         folder = args.folder_gt
         border = 0
         window_size = 7
