@@ -92,7 +92,7 @@ def main():
             if output.ndim == 3:
                 output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))  # CHW-RGB to HCW-BGR
             output = (output * 255.0).round().astype(np.uint8)  # float32 to uint8
-            cv2.imwrite(f'{save_dir}/{imgname}_{args.img_identifier}_ttt.png', output)
+            cv2.imwrite(f'{save_dir}/{imgname}_{args.img_identifier}_orig.png', output)
 
             # evaluate psnr/ssim/psnr_b
             if img_gt is not None:
@@ -342,8 +342,9 @@ def get_image_pair(args, path):
     if args.task in ['classical_sr', 'lightweight_sr']:
         img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
         if 'HR' not in imgname:
-            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
-                np.float32) / 255.
+            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}x4{imgext}', cv2.IMREAD_COLOR).astype(np.float32) / 255.
+            # img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
+            #     np.float32) / 255.
         else:
             print(f'Full Path: {args.folder_lq}/{imgname[0:len(imgname)-2]}{imgext}')
             print(f'First Component: {args.folder_lq}')
