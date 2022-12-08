@@ -115,18 +115,26 @@ def optimizer_to(optim, device):
 def test(args, data_loader, model, criterion, epoch, device):
     model.eval()
     losses = AverageMeter()
+    acccuracies = AverageMeter()
     for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
         # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
+        pretrain_input = pretrain_input.to(device, non_blocking=True)
+        ttt_input = ttt_input.to(device, non_blocking=True)
+        mask = mask.to(device, non_blocking=True)
+        signal_mask = signal_mask.to(device, non_blocking=True)
+        
+        output = model(torch.cat([pretrain_input, ttt_input], axis=1))
+        loss = criterion(output, mask)
         loss = torch.sum(loss * signal_mask) / torch.sum(signal_mask)
         # record loss
+        accuracy = torch.sum(((output >= 0) ==  mask) * signal_mask) / torch.sum(signal_mask)
+        acccuracies.update(accuracy.data.item(), 1)
         losses.update(loss.data.item(), input.size(0))
 
         if idx % 5 == 0:
             print('Epoch: [{0}][{1}]\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                   epoch, idx, loss=losses))
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t Acc {acc.val:.4f} ({acc.avg:.4f})'.format(
+                   epoch, idx, loss=losses, acc=acccuracies))
     return top1.avg
 
 
@@ -137,9 +145,13 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
     model.train()
     for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
         # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
-        loss = torch.sum(loss * signal_mask) / torch.sum(signal_mask)
+        pretrain_input = pretrain_input.to(device, non_blocking=True)
+        ttt_input = ttt_input.to(device, non_blocking=True)
+        mask = mask.to(device, non_blocking=True)
+        signal_mask = signal_mask.to(device, non_blocking=True)
+        
+        output = model(torch.cat([pretrain_input, ttt_input], axis=1))
+        loss = criterion(output, mask)
         # record loss
         losses.update(loss.data.item(), input.size(0))
 
