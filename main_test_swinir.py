@@ -151,7 +151,7 @@ def main():
         for idx, model_path in enumerate(sorted(glob.glob(os.path.join(args.models_dir, '*')))):
             model = define_model(args)
             model = model.to(device)
-            # pretrained_model = torch.load(model_path)
+            pretrained_model = torch.load(model_path)
             param_key_g = 'params'
             model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
             model.eval()
