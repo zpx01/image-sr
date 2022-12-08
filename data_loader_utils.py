@@ -12,14 +12,14 @@ from scipy.io import loadmat
 
 def random_augment(ims,
                    base_scales=None,
-                   leave_as_is_probability=0.2,
-                   no_interpolate_probability=0.3,
-                   min_scale=0.5,
-                   max_scale=1.0,
-                   allow_rotation=True,
-                   scale_diff_sigma=0.01,
-                   shear_sigma=0.01,
-                   crop_size=128):
+                   leave_as_is_probability: float = 0.2,
+                   no_interpolate_probability: float = 0.3,
+                   min_scale: float = 0.5,
+                   max_scale: float = 1.0,
+                   allow_rotation: bool = True,
+                   scale_diff_sigma: float = 0.01,
+                   shear_sigma: float = 0.01,
+                   crop_size: int = 128):
 
     # Determine which kind of augmentation takes place according to probabilities
     random_chooser = np.random.rand()

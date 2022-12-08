@@ -14,8 +14,10 @@ class DataLoaderPretrained(data.Dataset):
     during test-time so that you can train/fine-tune your
     model in real time.
     """
-    def __init__(self, input_img, conf=Config(), sf=2, kernel=None):
+    def __init__(self, input_img, conf=None, sf=2, kernel=None):
+        """sf: the scale factor."""
         super(DataLoaderPretrained, self).__init__()
+        if conf is None: conf = Config()
         self.input_img = input_img
         self.hr_father_sources = [self.input_img]
         self.sf = sf
@@ -24,15 +26,15 @@ class DataLoaderPretrained(data.Dataset):
 
     def generate_hr_father(self):
         return random_augment(ims=self.hr_father_sources,
-                                            base_scales=[1.0] + self.conf.scale_factors,
-                                            leave_as_is_probability=1,
-                                            no_interpolate_probability=self.conf.augment_no_interpolate_probability,
-                                            min_scale=self.conf.augment_min_scale,
-                                            max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_father_sources)-1],
-                                            allow_rotation=self.conf.augment_allow_rotation,
-                                            scale_diff_sigma=self.conf.augment_scale_diff_sigma,
-                                            shear_sigma=self.conf.augment_shear_sigma,
-                                            crop_size=self.conf.crop_size)
+                              base_scales=[1.0] + self.conf.scale_factors,
+                              leave_as_is_probability=1,
+                              no_interpolate_probability=self.conf.augment_no_interpolate_probability,
+                              min_scale=self.conf.augment_min_scale,
+                              max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_father_sources)-1],
+                              allow_rotation=self.conf.augment_allow_rotation,
+                              scale_diff_sigma=self.conf.augment_scale_diff_sigma,
+                              shear_sigma=self.conf.augment_shear_sigma,
+                              crop_size=self.conf.crop_size)
     
     def father_to_son(self, hr_father):
         return imresize(hr_father, 1.0 / self.sf, kernel=self.kernel)
@@ -59,6 +61,25 @@ class DataLoaderPretrained(data.Dataset):
 
 
 
+class DataLoaderClassification(data.Dataset):
+    """
+    A DataLoader class for test-time training.
+    This class generates augmentations of test images
+    during test-time so that you can train/fine-tune your
+    model in real time.
+    """
+    def __init__(self, ttt_path, pretrain_path, hq_path):
+        super(DataLoaderClassification, self).__init__()
+        if conf is None: conf = Config()
+        self.input_img = input_img
+
+    def __getitem__(self, index):
+        # generate some image pairs
+        self.generate_pairs(index)
+        return self.lr[index], self.hr[index]
+    
+    def __len__(self):
+        return len()
 
 
     
