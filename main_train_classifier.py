@@ -38,9 +38,9 @@ def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # instantiate model
-    model = net(upscale=args.scale, in_chans=3, out_chans=1, img_size=48, window_size=8,
+    model = net(upscale=1, in_chans=3, out_chans=1, img_size=48, window_size=8,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
-                mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
+                mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv', rescale_back=False)
     optimizer = torch.optim.Adam(model.parameters())
     param_key_g = 'params'
     model = model.to(device)
