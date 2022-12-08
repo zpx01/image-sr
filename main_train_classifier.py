@@ -14,11 +14,8 @@ import cv2
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
-    parser.add_argument('--model_path', type=str)
-    parser.add_argument('--opt_path', type=str)
-    parser.add_argument('--scale', default=4, type=int)
     parser.add_argument('--num_images', default=10, type=int)
-    parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--train_hq_dir', type=str, help='hq location')
     parser.add_argument('--train_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--train_pretrain_dir', type=str, help='pretrain location')
@@ -26,17 +23,22 @@ def get_args_parser():
     parser.add_argument('--test_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--test_pretrain_dir', type=str, help='pretrain location')
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
+    parser.add_argument('--threshold', type=float, help="The threshold for the model.")
+    parser.add_argument('--batch_size', type=int, default=128, help="Batch size")
+    parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--seed', type=int, help='training seed')
+    parser.add_argument('--pin_mem', action='store_true',
+                        help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
+    parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
+    parser.set_defaults(pin_mem=True)
     return parser
 
 def main(args):
     # use cuda if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_path = args.model_path
-    optimizer_path = args.opt_path
-
+    
     # instantiate model
-    model = net(upscale=args.scale, in_chans=3, img_size=48, window_size=8,
+    model = net(upscale=args.scale, in_chans=3, out_chans=1, img_size=48, window_size=8,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
     optimizer = torch.optim.Adam(model.parameters())
@@ -44,7 +46,7 @@ def main(args):
     model = model.to(device)
     optimizer_to(optimizer, device)
 
-    criterion = torch.nn.BCEWithLogitsLoss().cuda()
+    criterion = torch.nn.BCEWithLogitsLoss(reduction='none').cuda()
 
     # set random seed
     random.seed(args.seed)
@@ -53,13 +55,29 @@ def main(args):
     torch.cuda.manual_seed_all(args.seed)
 
     save_dir = args.output_dir
-    folder = args.test_dir
-    best_prec1 = 0
 
     # TTT checkpoint loop for each test image
-    train_data_loader = DataLoaderClassification() # TODO
-    test_data_loader = DataLoaderClassification() # TODO
+    train_dataset = DataLoaderClassification(args.train_hq_dir, args.train_pretrain_dir, args.train_ttt_dir, threshold=args.threshold)
+    test_dataset = DataLoaderClassification(args.test_hq_dir, args.test_pretest_dir, args.test_ttt_dir, threshold=args.threshold)
     
+    sampler_train = torch.utils.data.RandomSampler(dataset_train)
+    sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, 
+        sampler=sampler_train,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=True,)
+
+    test_data_loader = torch.utils.data.DataLoader(
+        test_dataset, sampler=sampler_val,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False
+    )
+
     for epoch in range(args.epochs):
         adjust_learning_rate(optimizer, epoch)
         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
@@ -72,7 +90,7 @@ def main(args):
             'best_prec1': best_prec1,
             'test_prec1': test_prec1
         }
-        if (epoch) % 2 == 0:
+        if (epoch) % 10 == 0:
             torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
 
 
@@ -92,25 +110,36 @@ def optimizer_to(optim, device):
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)
 
+
 @torch.no_grad()
 def test(args, data_loader, model, criterion, epoch, device):
-    pass
+    model.eval()
+    losses = AverageMeter()
+    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
+        # compute output
+        output = model(input_var)
+        loss = criterion(output, target_var)
+        loss = torch.sum(loss * signal_mask) / torch.sum(signal_mask)
+        # record loss
+        losses.update(loss.data.item(), input.size(0))
+
+        if idx % 5 == 0:
+            print('Epoch: [{0}][{1}]\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                   epoch, idx, loss=losses))
+    return top1.avg
+
 
 def train(args, data_loader, model, optimizer, criterion, epoch, device):
-    """
-    TTT training, updates pretrained model with new augmentations 
-    of test image
-    """
-    batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
     model.train()
-    for idx, (ttt_input, pretrain_input, mask) in enumerate(data):
+    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
         # compute output
         output = model(input_var)
         loss = criterion(output, target_var)
-
+        loss = torch.sum(loss * signal_mask) / torch.sum(signal_mask)
         # record loss
         losses.update(loss.data.item(), input.size(0))
 
@@ -119,17 +148,10 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         loss.backward()
         optimizer.step()
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
         if idx % 5 == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+            print('Epoch: [{0}][{1}]\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                   epoch, idx, len(data_loader), batch_time=batch_time,
-                   data_time=data_time, loss=losses))
+                   epoch, idx, loss=losses))
     return top1.avg
 
 
