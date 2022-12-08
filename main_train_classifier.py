@@ -38,7 +38,7 @@ def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # instantiate model
-    model = net(upscale=1, in_chans=3, out_chans=1, img_size=48, window_size=8,
+    model = net(upscale=1, in_chans=6, out_chans=1, img_size=48, window_size=8,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv', rescale_back=False)
     optimizer = torch.optim.Adam(model.parameters())
@@ -91,7 +91,7 @@ def main(args):
             'test_prec1': test_prec1
         }
         if (epoch) % 10 == 0:
-            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
+            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}.pth')
 
 
 def optimizer_to(optim, device):
@@ -135,13 +135,11 @@ def test(args, data_loader, model, criterion, epoch, device):
             print('Epoch: [{0}][{1}]\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t Acc {acc.val:.4f} ({acc.avg:.4f})'.format(
                    epoch, idx, loss=losses, acc=acccuracies))
-    return top1.avg
 
 
 def train(args, data_loader, model, optimizer, criterion, epoch, device):
-    data_time = AverageMeter()
     losses = AverageMeter()
-    top1 = AverageMeter()
+    acccuracies = AverageMeter()
     model.train()
     for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
         # compute output
@@ -154,7 +152,10 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         loss = criterion(output, mask)
         # record loss
         losses.update(loss.data.item(), input.size(0))
-
+        with torch.no_grad():
+            accuracy = torch.sum(((output >= 0) ==  mask) * signal_mask) / torch.sum(signal_mask)
+            acccuracies.update(accuracy.data.item(), 1)
+        
         # compute gradient and do optimizer step
         optimizer.zero_grad()
         loss.backward()
@@ -162,9 +163,8 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
 
         if idx % 5 == 0:
             print('Epoch: [{0}][{1}]\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                   epoch, idx, loss=losses))
-    return top1.avg
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\tAcc {acc.val:.4f} ({acc.avg:.4f})'.format(
+                   epoch, idx, loss=losses, acc=acccuracies))
 
 
 def adjust_learning_rate(optimizer, epoch):

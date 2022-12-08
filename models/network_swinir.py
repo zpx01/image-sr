@@ -659,8 +659,12 @@ class SwinIR(nn.Module):
         if in_chans == 3:
             rgb_mean = (0.4488, 0.4371, 0.4040)
             self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
+        elif in_chans == 6:
+            rgb_mean = (0.4488, 0.4371, 0.4040, 0.4488, 0.4371, 0.4040)
+            self.mean = torch.Tensor(rgb_mean).view(1, 6, 1, 1)
         else:
             self.mean = torch.zeros(1, 1, 1, 1)
+        
         self.upscale = upscale
         self.upsampler = upsampler
         self.window_size = window_size
