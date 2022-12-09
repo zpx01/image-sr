@@ -19,7 +19,7 @@ def get_args_parser():
     parser.add_argument('--scale', default=4, type=int)
     parser.add_argument('--num_images', default=10, type=int)
     parser.add_argument('--epochs', default=5, type=int)
-    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--test_dir', type=str, help='testset location') 
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
