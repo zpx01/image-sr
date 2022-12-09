@@ -19,6 +19,8 @@ def get_args_parser():
     parser.add_argument('--scale', default=4, type=int)
     parser.add_argument('--num_images', default=10, type=int)
     parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
+    parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--test_dir', type=str, help='testset location') 
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
     parser.add_argument('--reset', type=bool, default=True, help='set to False if you do not want to reset optimizer')
@@ -47,7 +49,7 @@ def main(args):
     criterion = torch.nn.L1Loss().cuda()
 
     # set random seed
-    seed = random.randint(1, 10000)
+    seed = args.seed
     print('Random seed: {}'.format(seed))
     random.seed(seed)
     np.random.seed(seed)
@@ -63,6 +65,9 @@ def main(args):
         print(path)
         img_lq = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255
         data_loader = DataLoaderPretrained(img_lq, sf=args.scale)
+        data_loader.generate_pairs(args.num_images)
+        dataset = list(zip(data_loader.lr, data_loader.hr))
+        data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
         for epoch in range(args.epochs):
             adjust_learning_rate(optimizer, epoch)
             prec1 = train(args, data_loader, model, optimizer, criterion, epoch, device)
@@ -109,15 +114,15 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
     losses = AverageMeter()
     top1 = AverageMeter()
     end = time.time()
-    data_loader.generate_pairs(args.num_images)
-    data = zip(data_loader.lr, data_loader.hr)
-    for idx, (input, target) in enumerate(data):
+
+    for idx, data in enumerate(data_loader):
         # measure data loading time
         model.train()
         data_time.update(time.time() - end)
-        
-        input = torch.from_numpy(input).float().to(device)
-        target = torch.from_numpy(target).float().to(device)
+
+        input, target = data
+        input = torch.from_numpy(torch.Tensor.numpy(input)).float().to(device)
+        target = torch.from_numpy(torch.Tensor.numpy(target)).float().to(device)
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
@@ -137,7 +142,7 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if idx % 5 == 0:
+        if idx % 1 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'

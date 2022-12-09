@@ -15,7 +15,7 @@ class DataLoaderPretrained(data.Dataset):
     model in real time.
     """
     def __init__(self, input_img, conf=Config(), sf=2, kernel=None):
-        super(DataLoaderPretrained, self).__init__()
+        super().__init__()
         self.input_img = input_img
         self.hr_father_sources = [self.input_img]
         self.sf = sf
@@ -40,11 +40,12 @@ class DataLoaderPretrained(data.Dataset):
     def generate_pairs(self, index):
         self.hr = []
         self.lr = []
-        for _ in range(index):
+        for _ in range(index+1):
             hr_father = self.generate_hr_father()
             lr_son = self.father_to_son(hr_father)
             hr_father = np.transpose(np.expand_dims(hr_father, axis=0), (0, 3, 1, 2))
             lr_son = np.transpose(np.expand_dims(lr_son, axis=0), (0, 3, 1, 2))
+            hr_father, lr_son = hr_father.squeeze(), lr_son.squeeze()
             self.hr.append(hr_father)
             self.lr.append(lr_son)
     
