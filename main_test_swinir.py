@@ -345,7 +345,7 @@ def get_image_pair(args, path):
         img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
         if 'HR' not in imgname:
             # print(f'{args.folder_lq}/{imgname}{imgext}')
-            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
+            img_lq = cv2.imread(f'{args.folder_lq}/{imgname}x4{imgext}', cv2.IMREAD_COLOR).astype(
                 np.float32) / 255.
         else:
             print(f'Full Path: {args.folder_lq}/{imgname[0:len(imgname)-2]}{imgext}')

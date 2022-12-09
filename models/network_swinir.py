@@ -648,18 +648,23 @@ class SwinIR(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, upscale=2, img_range=1., upsampler='', resi_connection='1conv',
+                 use_checkpoint=False, upscale=2, img_range=1., upsampler='', resi_connection='1conv', rescale_back=True, 
                  **kwargs):
         super(SwinIR, self).__init__()
         num_in_ch = in_chans
+        self.rescale_back = rescale_back 
         num_out_ch = out_chans
         num_feat = 64
         self.img_range = img_range
         if in_chans == 3:
             rgb_mean = (0.4488, 0.4371, 0.4040)
             self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
+        elif in_chans == 6:
+            rgb_mean = (0.4488, 0.4371, 0.4040, 0.4488, 0.4371, 0.4040)
+            self.mean = torch.Tensor(rgb_mean).view(1, 6, 1, 1)
         else:
             self.mean = torch.zeros(1, 1, 1, 1)
+        
         self.upscale = upscale
         self.upsampler = upsampler
         self.window_size = window_size
@@ -833,8 +838,9 @@ class SwinIR(nn.Module):
             x_first = self.conv_first(x)
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
             x = x + self.conv_last(res)
-
-        x = x / self.img_range + self.mean
+        
+        if self.rescale_back:
+            x = x / self.img_range + self.mean
 
         return x[:, :, :H*self.upscale, :W*self.upscale]
 
