@@ -16,10 +16,10 @@ def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
     parser.add_argument('--num_images', default=10, type=int)
     parser.add_argument('--epochs', default=100, type=int)
-    parser.add_argument('--train_hq_dir', type=str, help='hq location')
+    parser.add_argument('--train_hr_dir', type=str, help='hq location')
     parser.add_argument('--train_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--train_pretrain_dir', type=str, help='pretrain location')
-    parser.add_argument('--test_hq_dir', type=str, help='hq location')
+    parser.add_argument('--test_hr_dir', type=str, help='hq location')
     parser.add_argument('--test_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--test_pretrain_dir', type=str, help='pretrain location')
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
@@ -57,8 +57,8 @@ def main(args):
     save_dir = args.output_dir
 
     # TTT checkpoint loop for each test image
-    train_dataset = DataLoaderClassification(args.train_hq_dir, args.train_pretrain_dir, args.train_ttt_dir, threshold=args.threshold)
-    test_dataset = DataLoaderClassification(args.test_hq_dir, args.test_pretest_dir, args.test_ttt_dir, threshold=args.threshold)
+    train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_pretrain_dir, args.train_ttt_dir, threshold=args.threshold)
+    test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_pretest_dir, args.test_ttt_dir, threshold=args.threshold)
     
     sampler_train = torch.utils.data.RandomSampler(dataset_train)
     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
