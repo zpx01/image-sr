@@ -115,7 +115,7 @@ PRETRAINED='...' # Directory with pretrained inference images
 TTT='...' # Directory with TTT inference images
 GT='...' # Directory with ground truth images
 LR='...' # Directory with low resolution images
-RESULTS_DIR='...' # File path to store resulting images"
+RESULTS_DIR='...' # File path to store resulting images
 
 python3 overlay_imgs.py \
 	--thresh ${THRESH} \
