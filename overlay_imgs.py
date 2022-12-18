@@ -1,16 +1,27 @@
+import sys, glob, os
 import numpy as np
 import matplotlib.pyplot as plt 
 import matplotlib.image as mpimg
-import sys
 import matplotlib.colors
+import argparse
+
+def get_args_parser():
+    parser = argparse.ArgumentParser('Overlay Image Visualization', add_help=False)
+    parser.add_argument('--thresh', type=float, default=0.001, help='loss threshold for confidence interval')
+    parser.add_argument('--pretrained', type=str, help='path to base pretrained model inference images')
+    parser.add_argument('--ttt', type=str, help='path to TTT model inference images')
+    parser.add_argument('--gt', type=str, help='path to ground truth images')
+    parser.add_argument('--lr', type=str, help='path to directory for merged image results')
+    parser.add_argument('--results_dir', type=str, help='path to folder to save new images')
+    return parser
 
 
-def overlay(img1, img2, lr, gt, i):
-    b_map = generate_binary_map(img1, img2, gt)
-    # print(b_map.shape, img1.shape, img2.shape)
+def overlay(args, img1, img2, lr, gt, i, name):
+    b_map = generate_binary_map(args.thresh, img1, img2, gt)
     rows, columns = 3, 2
     fig = plt.figure(figsize=(10, 10))
     cmap = matplotlib.colors.ListedColormap(['red', 'lime'])
+
     fig.add_subplot(rows, columns, 1)
     plt.imshow(lr)
     plt.title('Original LR')
@@ -19,26 +30,31 @@ def overlay(img1, img2, lr, gt, i):
     plt.title('Original HR')
     fig.add_subplot(rows, columns, 3)
     plt.imshow(img1)
-    plt.title('2x SwinIR Pretrained')
+    plt.title('4x SwinIR Pretrained')
     fig.add_subplot(rows, columns, 4)
     plt.imshow(img2)
-    plt.title('2x SwinIR with TTT')
+    plt.title('4x SwinIR with TTT')
     fig.add_subplot(rows, columns, 5)
     plt.imshow(gt)
-    plt.imshow(b_map, cmap=cmap, alpha=0.45)
-    plt.title('Overlayed L2 Loss Bitmap')
-    plt.savefig(f"test_time_overlay_x2_{i}.png")
+    plt.imshow(b_map, cmap=cmap, alpha=0.6)
+    plt.colorbar()
+    plt.title('Overlayed L2 Loss Bitmap (Merged)')
+    plt.savefig(f"{args.results_dir}/{name}_overlay.png")
 
-def generate_binary_map(img1, img2, gt):
+def generate_binary_map(thresh, img1, img2, gt):
     binary_map = np.zeros(shape=(img1.shape[0], img1.shape[1]))
     img1_loss, img2_loss = l2_loss(img1, gt), l2_loss(img2, gt)
     for i in range(img1_loss.shape[0]):
         for j in range(img1_loss.shape[1]):
-            if img1_loss[i][j] < img2_loss[i][j]:
-                binary_map[i][j] = False
-            else:
-                binary_map[i][j] = True
+            if img2_loss[i][j] - img1_loss[i][j] > thresh:
+                binary_map[i][j] = 0
+            elif img1_loss[i][j] - img2_loss[i][j] > thresh:
+                binary_map[i][j] = 1
     return binary_map
+
+
+def z_score(data, avg, std):
+    return (data - avg) / std
 
 def l2_loss(img, gt):
     loss = np.zeros(shape=(img.shape[0], img.shape[1]))
@@ -49,41 +65,36 @@ def l2_loss(img, gt):
             loss[i][j] = l2
     return loss
 
-original_LR_img_paths = [
-    '/home/zeeshan/image-sr/testsets/Set5/LRbicx2/baby.png',
-    '/home/zeeshan/image-sr/testsets/Set5/LRbicx2/bird.png',
-    '/home/zeeshan/image-sr/testsets/Set5/LRbicx2/butterfly.png',
-    '/home/zeeshan/image-sr/testsets/Set5/LRbicx2/head.png',
-    '/home/zeeshan/image-sr/testsets/Set5/LRbicx2/woman.png',
-]
+def main(args):
+    gt_folder = args.gt
+    gt_paths = []
+    for idx, path in enumerate(sorted(glob.glob(os.path.join(gt_folder, '*')))):
+        gt_paths.append(path)
+    
+    ttt_folder = args.ttt
+    ttt_paths = []
+    for idx, path in enumerate(sorted(glob.glob(os.path.join(ttt_folder, '*')))):
+        ttt_paths.append(path)
+    
+    swinir_folder = args.pretrained
+    swinir_paths = []
+    for idx, path in enumerate(sorted(glob.glob(os.path.join(swinir_folder, '*')))):
+        swinir_paths.append(path)
 
-original_HR_img_paths = [
-    '/home/zeeshan/image-sr/testsets/Set5/original/baby.png',
-    '/home/zeeshan/image-sr/testsets/Set5/original/bird.png',
-    '/home/zeeshan/image-sr/testsets/Set5/original/butterfly.png',
-    '/home/zeeshan/image-sr/testsets/Set5/original/head.png',
-    '/home/zeeshan/image-sr/testsets/Set5/original/woman.png',
-]
+    lr_folder = args.lr
+    lr_paths = []
+    for idx, path in enumerate(sorted(glob.glob(os.path.join(lr_folder, '*')))):
+        lr_paths.append(path)
 
-swinir_img_paths = [
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/baby_SwinIR.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/bird_SwinIR.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/butterfly_SwinIR.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/head_SwinIR.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/woman_SwinIR.png',
-]
+    for i in range(len(gt_paths)):
+        (imgname, imgext) = os.path.splitext(os.path.basename(gt_paths[i]))
+        img1 = mpimg.imread(swinir_paths[i])
+        img2 = mpimg.imread(ttt_paths[i])
+        gt = mpimg.imread(gt_paths[i])
+        lr = mpimg.imread(lr_paths[i])
+        overlay(args, img1, img2, lr, gt, i, imgname)
 
-swinir_img_paths_ttt = [
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/baby_SwinIR_ttt.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/bird_SwinIR_ttt.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/butterfly_SwinIR_ttt.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/head_SwinIR_ttt.png',
-    '/home/zeeshan/image-sr/results/swinir_classical_sr_x2/woman_SwinIR_ttt.png'
-]
-
-for i in range(len(swinir_img_paths)):
-    img1 = mpimg.imread(swinir_img_paths[i])
-    img2 = mpimg.imread(swinir_img_paths_ttt[i])
-    gt = mpimg.imread(original_HR_img_paths[i])
-    lr = mpimg.imread(original_LR_img_paths[i])
-    overlay(img1, img2, lr, gt, i)
+if __name__ == '__main__':
+    args = get_args_parser()
+    args = args.parse_args()
+    main(args)

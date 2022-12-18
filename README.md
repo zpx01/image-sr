@@ -106,7 +106,25 @@ python3 merge_results.py \
 ```
 To make sure the script will run as intended, please make sure that the corresponding pretrained, ttt, and gt images are in the correct order in their directories (if the first pretrained image in the pretrained directory is img1, then the first image in the ttt and gt directories must also be img1). 
 
-### Visualizations (In Progress)
+### Visualizations
+You may run the [`overlay_imgs.py`](overlay_imgs.py) script to generate visualizations of the results of your new models. These visualizations include an image with an overlaid mask where red pixels represent that the pretrained SwinIR image had a lower L2 loss and green pixels represent that the TTT image had a lower L2 loss with the ground truth. This bitmask helps identify the regions in which the SwinIR and TTT images perform better than the other. You may set the threshold for the confidence interval manually, or use the default value set at `0.001`.
+
+```bash
+THRESH=0.001 # Threshold for L2 loss confidence interval (Set to 0.001 by default)
+PRETRAINED='...' # Directory with pretrained inference images
+TTT='...' # Directory with TTT inference images
+GT='...' # Directory with ground truth images
+LR='...' # Directory with low resolution images
+RESULTS_DIR='...' # File path to store resulting images"
+
+python3 overlay_imgs.py \
+	--thresh ${THRESH} \
+	--pretrained ${PRETRAINED} \
+	--ttt ${TTT} \
+	--gt ${GT} \
+	--lr ${LR} \
+	--results_dir ${RESULTS_DIR}
+```
 
        
 
