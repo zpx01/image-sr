@@ -20,7 +20,7 @@ def overlay(args, img1, img2, lr, gt, i, name):
     b_map = generate_binary_map(args.thresh, img1, img2, gt)
     rows, columns = 3, 2
     fig = plt.figure(figsize=(10, 10))
-    cmap = matplotlib.colors.ListedColormap(['red', 'lime'])
+    cmap = matplotlib.colors.ListedColormap(['red', 'lime', 'beige'])
 
     fig.add_subplot(rows, columns, 1)
     plt.imshow(lr)
@@ -37,7 +37,6 @@ def overlay(args, img1, img2, lr, gt, i, name):
     fig.add_subplot(rows, columns, 5)
     plt.imshow(gt)
     plt.imshow(b_map, cmap=cmap, alpha=0.6)
-    plt.colorbar()
     plt.title('Overlayed L2 Loss Bitmap (Merged)')
     plt.savefig(f"{args.results_dir}/{name}_overlay.png")
 
@@ -47,14 +46,13 @@ def generate_binary_map(thresh, img1, img2, gt):
     for i in range(img1_loss.shape[0]):
         for j in range(img1_loss.shape[1]):
             if img2_loss[i][j] - img1_loss[i][j] > thresh:
-                binary_map[i][j] = 0
-            elif img1_loss[i][j] - img2_loss[i][j] > thresh:
                 binary_map[i][j] = 1
+            elif img1_loss[i][j] - img2_loss[i][j] > thresh:
+                binary_map[i][j] = 0
+            else:
+                binary_map[i][j] = 2
+
     return binary_map
-
-
-def z_score(data, avg, std):
-    return (data - avg) / std
 
 def l2_loss(img, gt):
     loss = np.zeros(shape=(img.shape[0], img.shape[1]))
