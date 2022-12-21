@@ -11,6 +11,7 @@ import time
 import random
 from data_loader import DataLoaderPretrained
 import cv2
+import math
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Test Time Training - Classical SR', add_help=False)
@@ -24,6 +25,8 @@ def get_args_parser():
     parser.add_argument('--test_dir', type=str, help='testset location') 
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
     parser.add_argument('--reset', type=bool, default=True, help='set to False if you do not want to reset optimizer')
+    parser.add_argument('--zero_loss', type=bool, default=False, help='set to True if you want the TTT for each image to train till zero loss')
+    parser.add_argument('--save_freq', type=int, default=2, help="frequency of saving model checkpoints (saving nth model)")
     return parser
 
 def main(args):
@@ -68,25 +71,43 @@ def main(args):
         data_loader.generate_pairs(args.num_images)
         dataset = list(zip(data_loader.lr, data_loader.hr))
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-        for epoch in range(args.epochs):
-            adjust_learning_rate(optimizer, epoch)
-            prec1 = train(args, data_loader, model, optimizer, criterion, epoch, device)
-            best_prec1 = max(prec1, best_prec1)
-            state_dict = {
-                'epoch': epoch + 1,
-                'arch': 'swinir',
-                'state_dict': model.state_dict(),
-                'best_prec1': best_prec1,
-            }
-            img_name = path[45:].replace('.png', '')
-            img_name = img_name.replace('/', '')
-            if (epoch) % 2 == 0:
-                torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
+        if not args.zero_loss:
+            for epoch in range(args.epochs):
+                adjust_learning_rate(optimizer, epoch)
+                prec1, loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
+                best_prec1 = max(prec1, best_prec1)
+                state_dict = {
+                    'epoch': epoch + 1,
+                    'arch': 'swinir',
+                    'state_dict': model.state_dict(),
+                    'best_prec1': best_prec1,
+                }
+                img_name = path[45:].replace('.png', '')
+                img_name = img_name.replace('/', '')
+                if (epoch) % args.save_freq == 0:
+                    torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
+        else:
+            epoch = 0
+            loss = float('inf')
+            while not 0.0 <= loss <= 0.001:
+                adjust_learning_rate(optimizer, epoch)
+                prec1, loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
+                best_prec1 = max(prec1, best_prec1)
+                state_dict = {
+                    'epoch': epoch + 1,
+                    'arch': 'swinir',
+                    'state_dict': model.state_dict(),
+                    'best_prec1': best_prec1,
+                }
+                img_name = path[45:].replace('.png', '')
+                img_name = img_name.replace('/', '')
+                if (epoch) % args.save_freq == 0:
+                    torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
+                epoch += 1
+            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
         if args.reset:
             optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
-
-    
 
 def optimizer_to(optim, device):
     """
@@ -132,6 +153,7 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
 
         # record loss
         losses.update(loss.data.item(), input.size(0))
+        print("\nLOSS:\n", losses.val)
 
         # compute gradient and do optimizer step
         optimizer.zero_grad()
@@ -149,7 +171,7 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                    epoch, idx, len(data_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses))
-    return top1.avg
+    return top1.avg, losses.val
 
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
