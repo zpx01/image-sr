@@ -57,8 +57,10 @@ def main(args):
     save_dir = args.output_dir
 
     # TTT checkpoint loop for each test image
-    train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_pretrain_dir, args.train_ttt_dir, threshold=args.threshold)
-    test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_pretest_dir, args.test_ttt_dir, threshold=args.threshold)
+    train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_pretrain_dir,    
+                                             args.train_ttt_dir, threshold=args.threshold)
+    test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_pretest_dir, args.test_ttt_dir, 
+                                            threshold=args.threshold)
     
     sampler_train = torch.utils.data.RandomSampler(dataset_train)
     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
