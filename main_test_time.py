@@ -14,6 +14,9 @@ import cv2
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import math
 
+GPU_DEVICES = 6 
+
+
 def get_args_parser():
     parser = argparse.ArgumentParser('Test Time Training - Classical SR', add_help=False)
     parser.add_argument('--model_path', type=str)
@@ -28,11 +31,13 @@ def get_args_parser():
     parser.add_argument('--reset', type=bool, default=True, help='set to False if you do not want to reset optimizer')
     parser.add_argument('--zero_loss', type=bool, default=False, help='set to True if you want the TTT for each image to train till zero loss')
     parser.add_argument('--save_freq', type=int, default=2, help="frequency of saving model checkpoints (saving nth model)")
+    parser.add_argument('--device', type=str, default='cuda:0', help="Device")
     return parser
 
 def main(args):
     # use cuda if available
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(args.device)
     model_path = args.model_path
     optimizer_path = args.opt_path
 
@@ -64,9 +69,11 @@ def main(args):
     save_dir = args.output_dir
     folder = args.test_dir
     best_prec1 = 0
-
+    files = sorted(glob.glob(os.path.join(folder, '*')))
+    device_index = int(args.device.split(':')[-1])
+    files = [f for (i, f) in enumerate(files) if i % GPU_DEVICES == device_index]
     # TTT checkpoint loop for each test image
-    for idx, path in enumerate(sorted(glob.glob(os.path.join(folder, '*')))):
+    for idx, path in enumerate(files):
         print(path)
         img_lq = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255
         data_loader = DataLoaderPretrained(img_lq, sf=args.scale)
@@ -103,7 +110,7 @@ def main(args):
                 }
                 img_name = path[45:].replace('.png', '')
                 img_name = img_name.replace('/', '')
-                if (epoch) % args.save_freq == 0:
+                if (epoch) % args.save_freq == 0 and epoch != 0:
                     torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
                 epoch += 1
                 scheduler.step(loss)
