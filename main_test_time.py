@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from models.network_swinir import SwinIR as net
 import os.path
+from os.path import exists
 import time
 import random
 from data_loader import DataLoaderPretrained
@@ -69,12 +70,17 @@ def main(args):
     save_dir = args.output_dir
     folder = args.test_dir
     best_prec1 = 0
-    files = sorted(glob.glob(os.path.join(folder, '*')))
+    files = sorted(glob.glob(os.path.join(folder, '*')))[::-1]
     device_index = int(args.device.split(':')[-1])
     files = [f for (i, f) in enumerate(files) if i % GPU_DEVICES == device_index]
     # TTT checkpoint loop for each test image
     for idx, path in enumerate(files):
         print(path)
+        img_name = path[45:].replace('.png', '')
+        img_name = img_name.replace('/', '')
+        
+        if os.path.exists(f'{save_dir}/checkpoint_swinir_{img_name}_last.pth'):
+            continue
         img_lq = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255
         data_loader = DataLoaderPretrained(img_lq, sf=args.scale)
         data_loader.generate_pairs(args.num_images)
@@ -91,8 +97,6 @@ def main(args):
                     'state_dict': model.state_dict(),
                     'best_prec1': best_prec1,
                 }
-                img_name = path[45:].replace('.png', '')
-                img_name = img_name.replace('/', '')
                 if (epoch) % args.save_freq == 0:
                     torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
         else:
@@ -108,8 +112,6 @@ def main(args):
                     'state_dict': model.state_dict(),
                     'best_prec1': best_prec1,
                 }
-                img_name = path[45:].replace('.png', '')
-                img_name = img_name.replace('/', '')
                 if (epoch) % args.save_freq == 0 and epoch != 0:
                     torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
                 epoch += 1
