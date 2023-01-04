@@ -4,7 +4,7 @@
 
 # SBATCH --qos high6       # QOS (priority).
 #SBATCH -N 1               # Number of nodes requested.
-#SBATCH -n 1               # Number of tasks (i.e. processes).
+#SBATCH -n 6               # Number of tasks (i.e. processes).
 #SBATCH --cpus-per-task=8  # Number of cores per task.
 #SBATCH --gres=gpu:6       # Number of GPUs.
 #SBATCH -t 3-12:00          # Time requested (D-HH:MM).
@@ -53,7 +53,7 @@ do
                 --model_path ${MODEL_PATH} \
                 --opt_path ${OPTIMIZER_PATH} \
                 --scale 4 \
-                --num_images 64 \
+                --num_images 15 \
                 --epochs 5 \
                 --test_dir ${TESTSET_DIR} \
                 --output_dir ${OUTPUT_DIR} \
