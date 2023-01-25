@@ -33,7 +33,6 @@ def get_args_parser():
     parser.add_argument('--zero_loss', type=bool, default=True, help='set to True if you want the TTT for each image to train till zero loss')
     parser.add_argument('--save_freq', type=int, default=2, help="frequency of saving model checkpoints (saving nth model)")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device")
-    parser.add_argument('--local_rank', type=int)
     return parser
 
 def gpu_info(device):
