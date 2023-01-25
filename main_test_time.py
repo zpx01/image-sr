@@ -30,10 +30,18 @@ def get_args_parser():
     parser.add_argument('--test_dir', type=str, help='testset location') 
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
     parser.add_argument('--reset', type=bool, default=True, help='set to False if you do not want to reset optimizer')
-    parser.add_argument('--zero_loss', type=bool, default=False, help='set to True if you want the TTT for each image to train till zero loss')
+    parser.add_argument('--zero_loss', type=bool, default=True, help='set to True if you want the TTT for each image to train till zero loss')
     parser.add_argument('--save_freq', type=int, default=2, help="frequency of saving model checkpoints (saving nth model)")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device")
+    parser.add_argument('--local_rank', type=int)
     return parser
+
+def gpu_info(device):
+    if device.type == 'cuda':
+        print(torch.cuda.get_device_name(0))
+        print('Memory Usage:')
+        print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+        print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB\n')
 
 def main(args):
     # use cuda if available
@@ -41,6 +49,12 @@ def main(args):
     device = torch.device(args.device)
     model_path = args.model_path
     optimizer_path = args.opt_path
+
+    # setting device on GPU if available, else CPU
+    print('Using device:\n', device)
+
+    #Additional Info when using cuda
+    # gpu_info(device)
 
     # instantiate model
     model = net(upscale=args.scale, in_chans=3, img_size=48, window_size=8,
@@ -50,7 +64,7 @@ def main(args):
     param_key_g = 'params'
     model = model.to(device)
     optimizer_to(optimizer, device)
-
+    # gpu_info(device)
     # load pretrained model
     pretrained_model = torch.load(model_path)
     pretrained_optimizer = torch.load(optimizer_path, map_location='cpu')
@@ -58,7 +72,7 @@ def main(args):
     optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
     scheduler = ReduceLROnPlateau(optimizer, 'min')
     criterion = torch.nn.L1Loss().cuda()
-
+    # gpu_info(device)
     # set random seed
     seed = args.seed
     print('Random seed: {}'.format(seed))
@@ -88,7 +102,7 @@ def main(args):
         data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
         if not args.zero_loss:
             for epoch in range(args.epochs):
-                # adjust_learning_rate(optimizer, epoch)
+                adjust_learning_rate(optimizer, epoch)
                 prec1, loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
                 best_prec1 = max(prec1, best_prec1)
                 state_dict = {
@@ -103,8 +117,12 @@ def main(args):
             epoch = 0
             loss = float('inf')
             adjust_learning_rate(optimizer, epoch)
-            while not loss <= 0.001 and epoch < 1000:
-                prec1, loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
+            loss_values = []
+            best_model = (float('inf'), None)
+            while not has_loss_plateaued(loss_values, threshold=0.0001, lookback=12) and epoch < 1000:
+                # gpu_info(device)
+                prec1, avg_loss, cur_loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
+                loss_values.append(cur_loss)
                 best_prec1 = max(prec1, best_prec1)
                 state_dict = {
                     'epoch': epoch + 1,
@@ -112,10 +130,14 @@ def main(args):
                     'state_dict': model.state_dict(),
                     'best_prec1': best_prec1,
                 }
+                if cur_loss <= best_model[0]:
+                    best_model = (cur_loss, state_dict)
                 if (epoch) % args.save_freq == 0 and epoch != 0:
+                    state_dict = best_model[1]
                     torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_{epoch}.pth')
                 epoch += 1
                 scheduler.step(loss)
+            state_dict = best_model[1]
             torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_last.pth')
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
         if args.reset:
@@ -152,14 +174,12 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
     model.train()
     for idx, data in enumerate(data_loader):
         # measure data loading time
-        
+        optimizer.zero_grad()
         data_time.update(time.time() - end)
 
         input, target = data
-        input = torch.from_numpy(torch.Tensor.numpy(input)).float().to(device)  # TODO(zeeshan): is it normalized correctly?
-        target = torch.from_numpy(torch.Tensor.numpy(target)).float().to(device)  # TODO(zeeshan): is it normalized correctly?
-        # input_var = torch.autograd.Variable(input)
-        # target_var = torch.autograd.Variable(target)
+        input = input.float().to(device)
+        target = target.float().to(device)
 
         # compute output
         output = model(input)
@@ -167,10 +187,8 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
 
         # record loss
         losses.update(loss.data.item(), input.size(0))
-        # print("\nLOSS:\n", losses.val)
 
-        # compute gradient and do optimizer step
-        optimizer.zero_grad()
+        # do optimizer step
         loss.backward()
         optimizer.step()
 
@@ -178,21 +196,39 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if epoch % 50 == 0:
+        if epoch % 2 == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                    epoch, idx, len(data_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses))
-    return top1.avg, losses.avg
+    return top1.avg, losses.avg, losses.val
 
 def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+    """Decay LR dynamically during TTT."""
     lr = 2e-5 * (0.1 ** (epoch // 2))
     for param_group in optimizer.state_dict()['param_groups']:
         param_group['lr'] = lr
 
+def has_loss_plateaued(loss_values, threshold=0.0001, lookback=12, num_plateau=6):
+    """Stop TTT training if the difference in the loss in the past [lookback] epochs
+       is less than the threshold [num_plateau] times.
+    """
+    if len(loss_values) < lookback:
+        return False
+    plateau_count = 0
+    for i in range(1, lookback+1):
+        if len(loss_values) < lookback+1:
+            return False
+        diff = abs(loss_values[-i] - loss_values[-i-1])
+        if diff <= threshold:
+            plateau_count += 1
+        else:
+            plateau_count = 0
+        if plateau_count == num_plateau:
+            return True
+    return False
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
