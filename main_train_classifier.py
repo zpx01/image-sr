@@ -24,9 +24,9 @@ def get_args_parser():
     parser.add_argument('--test_pretrain_dir', type=str, help='pretrain location')
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
     parser.add_argument('--threshold', type=float, help="The threshold for the model.")
-    parser.add_argument('--batch_size', type=int, default=128, help="Batch size")
+    parser.add_argument('--batch_size', type=int, default=32, help="Batch size")
     parser.add_argument('--num_workers', default=10, type=int)
-    parser.add_argument('--seed', type=int, help='training seed')
+    parser.add_argument('--seed', default=2023, type=int, help='training seed')
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
@@ -35,18 +35,20 @@ def get_args_parser():
 
 def main(args):
     # use cuda if available
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     
     # instantiate model
     model = net(upscale=1, in_chans=6, out_chans=1, img_size=48, window_size=8,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv', rescale_back=False)
+    best_prec1 = 0
+    
+    print('num_params', sum(p.numel() for p in model.parameters() if p.requires_grad))
     optimizer = torch.optim.Adam(model.parameters())
-    param_key_g = 'params'
     model = model.to(device)
     optimizer_to(optimizer, device)
 
-    criterion = torch.nn.BCEWithLogitsLoss(reduction='none').cuda()
+    criterion = torch.nn.BCEWithLogitsLoss(reduction='none').to(device)
 
     # set random seed
     random.seed(args.seed)
@@ -59,11 +61,11 @@ def main(args):
     # TTT checkpoint loop for each test image
     train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_pretrain_dir,    
                                              args.train_ttt_dir, threshold=args.threshold)
-    test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_pretest_dir, args.test_ttt_dir, 
+    test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_pretrain_dir, args.test_ttt_dir, 
                                             threshold=args.threshold)
     
-    sampler_train = torch.utils.data.RandomSampler(dataset_train)
-    sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+    sampler_train = torch.utils.data.RandomSampler(train_dataset)
+    sampler_val = torch.utils.data.SequentialSampler(test_dataset)
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, 
         sampler=sampler_train,
@@ -83,6 +85,7 @@ def main(args):
     for epoch in range(args.epochs):
         adjust_learning_rate(optimizer, epoch)
         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
+        print(f'Epoch [{epoch:05}]: {prec1}')
         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
         best_prec1 = max(prec1, best_prec1)
         state_dict = {
@@ -92,8 +95,8 @@ def main(args):
             'best_prec1': best_prec1,
             'test_prec1': test_prec1
         }
-        if (epoch) % 10 == 0:
-            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}.pth')
+        # if (epoch) % 10 == 0:
+        #     torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}.pth')
 
 
 def optimizer_to(optim, device):
@@ -131,8 +134,8 @@ def test(args, data_loader, model, criterion, epoch, device):
         # record loss
         accuracy = torch.sum(((output >= 0) ==  mask) * signal_mask) / torch.sum(signal_mask)
         acccuracies.update(accuracy.data.item(), 1)
-        losses.update(loss.data.item(), input.size(0))
-
+        losses.update(loss.data.item(), pretrain_input.size(0))
+        # TODO(yossi): maybe also run the psnr etc. 
         if idx % 5 == 0:
             print('Epoch: [{0}][{1}]\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t Acc {acc.val:.4f} ({acc.avg:.4f})'.format(
@@ -152,8 +155,9 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         
         output = model(torch.cat([pretrain_input, ttt_input], axis=1))
         loss = criterion(output, mask)
+        loss = torch.sum(loss * signal_mask) / torch.sum(signal_mask)
         # record loss
-        losses.update(loss.data.item(), input.size(0))
+        losses.update(loss.data.item(), pretrain_input.size(0))
         with torch.no_grad():
             accuracy = torch.sum(((output >= 0) ==  mask) * signal_mask) / torch.sum(signal_mask)
             acccuracies.update(accuracy.data.item(), 1)
@@ -163,10 +167,11 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         loss.backward()
         optimizer.step()
 
-        if idx % 5 == 0:
+        if idx % 100 == 0:
             print('Epoch: [{0}][{1}]\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\tAcc {acc.val:.4f} ({acc.avg:.4f})'.format(
                    epoch, idx, loss=losses, acc=acccuracies))
+    return acccuracies.avg
 
 
 def adjust_learning_rate(optimizer, epoch):
