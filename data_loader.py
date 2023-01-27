@@ -9,6 +9,7 @@ from torchvision.transforms import RandomCrop, ToTensor
 import torchvision.transforms as T
 import glob
 import PIL.Image
+import torch
 
 class DataLoaderPretrained(data.Dataset):
     """
@@ -26,6 +27,7 @@ class DataLoaderPretrained(data.Dataset):
         self.sf = sf
         self.kernel = None
         self.conf = conf
+        self.num_workers=8
 
     def generate_hr_father(self):
         return random_augment(ims=self.hr_father_sources,
@@ -51,8 +53,8 @@ class DataLoaderPretrained(data.Dataset):
             hr_father = np.transpose(np.expand_dims(hr_father, axis=0), (0, 3, 1, 2))
             lr_son = np.transpose(np.expand_dims(lr_son, axis=0), (0, 3, 1, 2))
             hr_father, lr_son = hr_father.squeeze(), lr_son.squeeze()
-            self.hr.append(hr_father)
-            self.lr.append(lr_son)
+            self.hr.append(torch.Tensor(hr_father))
+            self.lr.append(torch.Tensor(lr_son))
     
     def __getitem__(self, index):
         # generate some image pairs
