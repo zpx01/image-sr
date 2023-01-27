@@ -26,6 +26,7 @@ def get_args_parser():
     parser.add_argument('--threshold', type=float, help="The threshold for the model.")
     parser.add_argument('--batch_size', type=int, default=32, help="Batch size")
     parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--lr', default=0.0001, type=float, help='Learning rate')
     parser.add_argument('--seed', default=2023, type=int, help='training seed')
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
@@ -44,7 +45,7 @@ def main(args):
     best_prec1 = 0
     
     print('num_params', sum(p.numel() for p in model.parameters() if p.requires_grad))
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     model = model.to(device)
     optimizer_to(optimizer, device)
 
@@ -83,7 +84,7 @@ def main(args):
     )
 
     for epoch in range(args.epochs):
-        adjust_learning_rate(optimizer, epoch)
+        # adjust_learning_rate(optimizer, epoch)
         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
         print(f'Epoch [{epoch:05}]: {prec1}')
         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
@@ -174,11 +175,11 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
     return acccuracies.avg
 
 
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = 2e-5 * (0.1 ** (epoch // 2))
-    for param_group in optimizer.state_dict()['param_groups']:
-        param_group['lr'] = lr
+# def adjust_learning_rate(optimizer, epoch):
+#     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+#     lr = 2e-5 * (0.1 ** (epoch // 2))
+#     for param_group in optimizer.state_dict()['param_groups']:
+#         param_group['lr'] = lr
 
 
 class AverageMeter(object):
