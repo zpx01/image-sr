@@ -4,7 +4,7 @@
 A [`environment.yml`](environment.yml) file has been provided to create a Conda environment:
 
 ```bash
-conda create --name image-sr --file environment.yml
+conda env create -f environment.yml
 conda activate image-sr
 ```
 

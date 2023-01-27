@@ -1,6 +1,7 @@
 import numpy as np
 from imresize import imresize
 import math
+import torch
 from data_loader_utils import *
 from test_time_config import Config
 import torch.utils.data as data
@@ -8,8 +9,9 @@ import utils.utils_image as util
 from torchvision.transforms import RandomCrop, ToTensor
 import torchvision.transforms as T
 import glob
+import tqdm
 import PIL.Image
-import torch
+import random
 
 class DataLoaderPretrained(data.Dataset):
     """
@@ -74,20 +76,26 @@ class DataLoaderClassification(data.Dataset):
     during test-time so that you can train/fine-tune your
     model in real time.
     """
-    def __init__(self, hr_path, orig_path, ttt_path, threshold):
+    def __init__(self, hr_path, orig_path, ttt_path, threshold, initial_signal_threshold: int = 200):
         super(DataLoaderClassification, self).__init__()
         self.random_crop = RandomCrop(128)
         self.to_tensor = ToTensor()
         self.threshold = threshold
-        self.hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
+        self.initial_signal_threshold = initial_signal_threshold
+        self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
         self.orig_paths = []
         self.ttt_paths = []
-        for path in self.hr_paths:
+        self.hr_paths = []
+        for path in self._hr_paths:
             name = os.path.split(path)[-1].replace('.png', '')
-            ttt_image_name = f'{name}_12_6_22_ttt_ttt.png'
+            ttt_image_name = f'{name}_1_24_23_ttt_ttt.png'
             orig_image_name = ttt_image_name.replace('ttt', 'orig')
-            self.orig_paths.append(os.path.join(orig_path, orig_image_name))
-            self.ttt_paths.append(os.path.join(ttt_path, ttt_image_name))
+            # Do it once to eliminate cases that don't provide inforamtion:
+            full_orig_path = os.path.join(orig_path, orig_image_name)
+            full_ttt_path = os.path.join(ttt_path, ttt_image_name)
+            self.orig_paths.append(full_orig_path)
+            self.ttt_paths.append(full_ttt_path)
+            self.hr_paths.append(path)
 
     def create_masks(self, hr_image: np.array, orig_image: np.array, ttt_image: np.array):
         distance_ttt = np.mean((hr_image - ttt_image) ** 2, axis=2)
@@ -113,14 +121,26 @@ class DataLoaderClassification(data.Dataset):
         mask = self.to_tensor(mask)
         signal_mask = self.to_tensor(signal_mask)
         image_ttt = self.to_tensor(image_ttt)
-        params = self.random_crop.get_params(image_orig, (128, 128))
+        params = self.random_crop.get_params(image_orig, (48, 48))
         signal_mask = T.functional.crop(signal_mask, *params)
         tries = 0
-        while torch.sum(signal_mask) == 0:
+        while torch.sum(signal_mask) < self.initial_signal_threshold:
             tries += 1
-            if tries == 5: 
-                raise ValueError(f' No good examples for image {image_orig}')
-            params = self.random_crop.get_params(image_orig, (128, 128))
+            if tries == 10: 
+                tries = 0
+                index = random.randint(0, len(self.hr_paths)-1)
+                image_orig = PIL.Image.open(self.orig_paths[index])
+                image_ttt = PIL.Image.open(self.ttt_paths[index])
+                image_hr =  PIL.Image.open(self.hr_paths[index])
+                mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
+                mask = PIL.Image.fromarray(np.uint8(mask))
+                signal_mask = PIL.Image.fromarray(np.uint8(signal_mask)) 
+                image_orig = self.to_tensor(image_orig)
+                mask = self.to_tensor(mask)
+                signal_mask = self.to_tensor(signal_mask)
+                image_ttt = self.to_tensor(image_ttt)
+
+            params = self.random_crop.get_params(image_orig, (48, 48))
             signal_mask = T.functional.crop(signal_mask, *params)
         image_orig = T.functional.crop(image_orig, *params)
         image_ttt = T.functional.crop(image_ttt, *params)

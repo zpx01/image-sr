@@ -39,22 +39,23 @@ conda activate image-sr
 export PYTHONUNBUFFERED=1
 
 # Do all the research.
-OUTPUT_DIR='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_ttt_train_patch48_x4_meta/'
-TRAIN_HR_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainH/DIV2K_train_HR_sub/'
-TRAIN_TTT_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/train/swinir_classical_sr_x4_12_6_22_ttt/'
-TRAIN_PRETRAIN_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/train/swinir_classical_sr_x4_12_6_22_orig/'
-TEST_HR_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainValidH/DIV2K_valid_HR/'
-TEST_TTT_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/val/swinir_classical_sr_x4_12_6_22_ttt/'
-TEST_PRETRAIN_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/results/val/swinir_classical_sr_x4_12_6_22_orig/'
+
+OUTPUT_DIR='/home/yossi_gandelsman/test_time_training/second_stage/'
+TRAIN_HR_DIR='/home/yossi_gandelsman/test_time_training/first_stage/DIV2K_valid_HR_sub/'
+TRAIN_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_ttt/'
+TRAIN_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_orig/'
+TEST_HR_DIR='/home/yossi_gandelsman/test_time_training/first_stage/DIV2K_valid_HR_sub/'
+TEST_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_ttt/'
+TEST_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_orig/'
 
 python3 main_train_classifier.py \
-        --threshold 20 \
+        --threshold 0.01 \
         --train_hr_dir ${TRAIN_HR_DIR} \
         --test_hr_dir ${TEST_HR_DIR} \
         --train_pretrain_dir ${TRAIN_PRETRAIN_DIR} \
         --test_pretrain_dir ${TEST_PRETRAIN_DIR} \
         --train_ttt_dir ${TRAIN_TTT_DIR} \
-        --test_ttt_dir ${TEST_TTT_DIR} \      
+        --test_ttt_dir ${TEST_TTT_DIR} \
         --output_dir ${OUTPUT_DIR}
 # Print completion time.
 
