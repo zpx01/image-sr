@@ -4,11 +4,11 @@
 
 # SBATCH --qos high6       # QOS (priority).
 #SBATCH -N 1               # Number of nodes requested.
-#SBATCH -n 6               # Number of tasks (i.e. processes).
+#SBATCH -n 1              # Number of tasks (i.e. processes).
 #SBATCH --cpus-per-task=8  # Number of cores per task.
-#SBATCH --gres=gpu:6       # Number of GPUs.
+#SBATCH --gres=gpu:1       # Number of GPUs.
 #SBATCH -t 3-12:00          # Time requested (D-HH:MM).
-##SBATCH --nodelist=em7    # Uncomment if you need a specific machine.
+##SBATCH --nodelist=em6    # Uncomment if you need a specific machine.
 
 # Uncomment this to have Slurm cd to a directory before running the script.
 # You can also just run the script from the directory you want to be in.
@@ -40,13 +40,14 @@ export PYTHONUNBUFFERED=1
 
 
 # Train the TTT for all the images in DIV2K_train_LR_bicubic/X4_sub
-MODEL_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_G.pth'
-OPTIMIZER_PATH='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_classical_patch48_x4/655000_optimizerG.pth'
-TESTSET_DIR='/old_home_that_will_be_deleted_at_some_point/yossi_gandelsman/datasets/SR/trainsets/trainL/DIV2K_train_LR_bicubic/X4_sub/'
-BATCH_SIZE=64
+MODEL_PATH='/home/zeeshan/image-sr/superresolution/swinir_sr_classical_patch48_x4/models/classicalSR_SwinIR_x4.pth'
+OPTIMIZER_PATH='/'
+TESTSET_DIR='/home/zeeshan/image-sr/testsets/Set14_kair/LRbicx4'
+BATCH_SIZE=4
 ZERO_LOSS=TRUE
 SAVE_FREQ=10000
-OUTPUT_DIR='/checkpoints/yossi_gandelsman/image-sr/swinir_sr_ttt_train_patch48_div2k_lr_bicubic_x4_sub/'
+NO_OPT=TRUE
+OUTPUT_DIR='/checkpoints/zeeshan/test_time_training/set14_ttt/sgd_models'
 
 python3 main_test_time.py \
         --model_path ${MODEL_PATH} \
@@ -59,67 +60,74 @@ python3 main_test_time.py \
         --batch_size ${BATCH_SIZE} \
         --zero_loss ${ZERO_LOSS} \
         --save_freq ${SAVE_FREQ} \
-        --device 'cuda:0' &
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 15 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR} \
-        --batch_size ${BATCH_SIZE} \
-        --zero_loss ${ZERO_LOSS} \
-        --save_freq ${SAVE_FREQ} \
-        --device 'cuda:1' &
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 15 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR} \
-        --batch_size ${BATCH_SIZE} \
-        --zero_loss ${ZERO_LOSS} \
-        --save_freq ${SAVE_FREQ} \
-        --device 'cuda:2' &
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 15 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR} \
-        --batch_size ${BATCH_SIZE} \
-        --zero_loss ${ZERO_LOSS} \
-        --save_freq ${SAVE_FREQ} \
-        --device 'cuda:3' &
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 15 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR} \
-        --batch_size ${BATCH_SIZE} \
-        --zero_loss ${ZERO_LOSS} \
-        --save_freq ${SAVE_FREQ} \
-        --device 'cuda:4' &
-python3 main_test_time.py \
-        --model_path ${MODEL_PATH} \
-        --opt_path ${OPTIMIZER_PATH} \
-        --scale 4 \
-        --num_images 15 \
-        --epochs 5 \
-        --test_dir ${TESTSET_DIR} \
-        --output_dir ${OUTPUT_DIR} \
-        --batch_size ${BATCH_SIZE} \
-        --zero_loss ${ZERO_LOSS} \
-        --save_freq ${SAVE_FREQ} \
-        --device 'cuda:5'
+        --no_opt ${NO_OPT} \
+        --device 'cuda:0' 
+        # &
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 15 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR} \
+#         --batch_size ${BATCH_SIZE} \
+#         --zero_loss ${ZERO_LOSS} \
+#         --save_freq ${SAVE_FREQ} \
+#         --no_opt ${NO_OPT} \
+#         --device 'cuda:1' &
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 15 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR} \
+#         --batch_size ${BATCH_SIZE} \
+#         --zero_loss ${ZERO_LOSS} \
+#         --save_freq ${SAVE_FREQ} \
+#         --no_opt ${NO_OPT} \
+#         --device 'cuda:2' &
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 15 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR} \
+#         --batch_size ${BATCH_SIZE} \
+#         --zero_loss ${ZERO_LOSS} \
+#         --save_freq ${SAVE_FREQ} \
+#         --no_opt ${NO_OPT} \
+#         --device 'cuda:3' &
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 15 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR} \
+#         --batch_size ${BATCH_SIZE} \
+#         --zero_loss ${ZERO_LOSS} \
+#         --save_freq ${SAVE_FREQ} \
+#         --no_opt ${NO_OPT} \
+#         --device 'cuda:4' &
+# python3 main_test_time.py \
+#         --model_path ${MODEL_PATH} \
+#         --opt_path ${OPTIMIZER_PATH} \
+#         --scale 4 \
+#         --num_images 15 \
+#         --epochs 5 \
+#         --test_dir ${TESTSET_DIR} \
+#         --output_dir ${OUTPUT_DIR} \
+#         --batch_size ${BATCH_SIZE} \
+#         --zero_loss ${ZERO_LOSS} \
+#         --save_freq ${SAVE_FREQ} \
+#         --no_opt ${NO_OPT} \
+#         --device 'cuda:5'
 date
 
 
