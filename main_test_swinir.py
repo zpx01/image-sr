@@ -8,7 +8,8 @@ import torch
 import requests
 import re
 from models.network_swinir import SwinIR as net
-from utils import utils_image as util
+from utils import utils_calculate_psnr_ssim as util
+import skimage
 
 def main():
     parser = argparse.ArgumentParser()
@@ -88,6 +89,7 @@ def main():
                 output = test(img_lq, model, args, window_size)
                 output = output[..., :h_old * args.scale, :w_old * args.scale]
 
+
             # save image
             output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
             if output.ndim == 3:
@@ -101,19 +103,17 @@ def main():
                 img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
                 img_gt = np.squeeze(img_gt)
 
-                psnr = util.calculate_psnr(output, img_gt, border=border)
-                ssim = util.calculate_ssim(output, img_gt, border=border)
+                psnr = util.calculate_psnr(output, img_gt, crop_border=border)
+                ssim = util.calculate_ssim(output, img_gt, crop_border=border)
                 test_results['psnr'].append(psnr)
                 test_results['ssim'].append(ssim)
                 if img_gt.ndim == 3:  # RGB image
-                    output_y = util.bgr2ycbcr(output.astype(np.float32) / 255.) * 255.
-                    img_gt_y = util.bgr2ycbcr(img_gt.astype(np.float32) / 255.) * 255.
-                    psnr_y = util.calculate_psnr(output_y, img_gt_y, border=border)
-                    ssim_y = util.calculate_ssim(output_y, img_gt_y, border=border)
+                    psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
+                    ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
                     test_results['psnr_y'].append(psnr_y)
                     test_results['ssim_y'].append(ssim_y)
                 if args.task in ['jpeg_car']:
-                    psnr_b = util.calculate_psnrb(output, img_gt, border=border)
+                    psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border, test_y_channel=False)
                     test_results['psnr_b'].append(psnr_b)
                 s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
                 print(s)
@@ -149,20 +149,57 @@ def main():
     elif args.type == 'ttt':
         print("Starting TTT Testing...")
         for idx, model_path in enumerate(sorted(glob.glob(os.path.join(args.models_dir, '*')))):
-            model = define_model(args)
-            model = model.to(device)
-            pretrained_model = torch.load(model_path)
-            param_key_g = 'params'
-            model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
-            model.eval()
-            print("Model:", model_path)
             for idx, path in enumerate(sorted(glob.glob(os.path.join(folder, '*')))):
+                imgname, img_lq, img_gt = get_image_pair(args, path)
+                img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+                img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
+                _, _, h_old, w_old = img_lq.size()
+                h_pad = (h_old // window_size + 1) * window_size - h_old
+                w_pad = (w_old // window_size + 1) * window_size - w_old
+                img_pred_path = f'{save_dir}/{imgname}_{args.img_identifier}_ttt.png'
+                if os.path.exists(img_pred_path):
+                    print(f'Skipping {imgname}...')
+                    output = cv2.imread(img_pred_path, cv2.IMREAD_COLOR)
+                    # evaluate psnr/ssim/psnr_b
+                    if img_gt is not None:
+                        img_gt = (img_gt * 255.0).round().astype(np.uint8)  # float32 to uint8
+                        img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
+                        img_gt = np.squeeze(img_gt)
+
+                        psnr = util.calculate_psnr(output, img_gt, crop_border=border)
+                        ssim = util.calculate_ssim(output, img_gt, crop_border=border)
+                        test_results['psnr'].append(psnr)
+                        test_results['ssim'].append(ssim)
+                        if img_gt.ndim == 3:  # RGB image
+                            psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
+                            ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
+                            test_results['psnr_y'].append(psnr_y)
+                            test_results['ssim_y'].append(ssim_y)
+                        if args.task in ['jpeg_car']:
+                            psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border)
+                            test_results['psnr_b'].append(psnr_b)
+                        res_strs.append(model_path)
+                        s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
+                        print(s)
+                        res_strs.append(s)
+                    else:
+                        s = 'Testing {:d} {:20s}\n'.format(idx, imgname)
+                        print(s)
+                        res_strs.append(s)
+                        continue
+                    continue
+                print(f"Starting {imgname}")
+                model = define_model(args)
+                model = model.to(device)
+                pretrained_model = torch.load(model_path)
+                param_key_g = 'params'
+                model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
+                model.eval()
+                print("Model:", model_path)
                 # read image
-                print(f'Glob path: {path}')
                 img_n = re.findall(r'[\w-]+\.', path)
                 img_n = img_n[0].replace('.', '')
                 img_n = img_n.replace('/', '')
-                print("IMG_N:", img_n)
                 if img_n in model_path:
                     imgname, img_lq, img_gt = get_image_pair(args, path)  # image to HWC-BGR, float32
                     img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
@@ -192,19 +229,17 @@ def main():
                         img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
                         img_gt = np.squeeze(img_gt)
 
-                        psnr = util.calculate_psnr(output, img_gt, border=border)
-                        ssim = util.calculate_ssim(output, img_gt, border=border)
+                        psnr = util.calculate_psnr(output, img_gt, crop_border=border)
+                        ssim = util.calculate_ssim(output, img_gt, crop_border=border)
                         test_results['psnr'].append(psnr)
                         test_results['ssim'].append(ssim)
                         if img_gt.ndim == 3:  # RGB image
-                            output_y = util.bgr2ycbcr(output.astype(np.float32) / 255.) * 255.
-                            img_gt_y = util.bgr2ycbcr(img_gt.astype(np.float32) / 255.) * 255.
-                            psnr_y = util.calculate_psnr(output_y, img_gt_y, border=border)
-                            ssim_y = util.calculate_ssim(output_y, img_gt_y, border=border)
+                            psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
+                            ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
                             test_results['psnr_y'].append(psnr_y)
                             test_results['ssim_y'].append(ssim_y)
                         if args.task in ['jpeg_car']:
-                            psnr_b = util.calculate_psnrb(output, img_gt, border=border)
+                            psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border)
                             test_results['psnr_b'].append(psnr_b)
                         res_strs.append(model_path)
                         s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
@@ -234,7 +269,7 @@ def main():
                             s = '-- Average PSNR_B: {:.2f} dB\n'.format(ave_psnr_b)
                             print(s)
                             res_strs.append(s)
-                
+                    
         res_file = open(results_file_path, 'w')
         res_file.writelines(res_strs)
         res_file.close()
@@ -299,7 +334,6 @@ def define_model(args):
         
     return model
 
-
 def setup(args):
     # 001 classical image sr/ 002 lightweight image sr
     if args.task in ['classical_sr', 'lightweight_sr']:
@@ -335,10 +369,10 @@ def setup(args):
 
 
 def get_image_pair(args, path):
-    print("args:", args, "path:", path)
+    # print("args:", args, "path:", path)
     (imgname, imgext) = os.path.splitext(os.path.basename(path))
-    print("PATH:", path)
-    print(imgname, imgext)
+    # print("PATH:", path)
+    # print(imgname, imgext)
 
     # 001 classical image sr/ 002 lightweight image sr (load lq-gt image pairs)
     if args.task in ['classical_sr', 'lightweight_sr']:
