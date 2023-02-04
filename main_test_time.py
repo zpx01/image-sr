@@ -15,13 +15,14 @@ import cv2
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import math
 
-GPU_DEVICES = 6 
+GPU_DEVICES = 1 # Set to number of GPUs available!
 
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Test Time Training - Classical SR', add_help=False)
     parser.add_argument('--model_path', type=str)
-    parser.add_argument('--opt_path', type=str)
+    parser.add_argument('--no_opt', type=bool, default=True, help="If True, then we use an optimizer from scratch, otherwise, we use the provided optimizer.")
+    parser.add_argument('--opt_path', type=str, default='/')
     parser.add_argument('--scale', default=4, type=int)
     parser.add_argument('--num_images', default=10, type=int)
     parser.add_argument('--epochs', default=5, type=int)
@@ -59,19 +60,19 @@ def main(args):
     model = net(upscale=args.scale, in_chans=3, img_size=48, window_size=8,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.SGD(model.parameters(), momentum=0.9, weight_decay=0.2, lr=1e-5)
     param_key_g = 'params'
     model = model.to(device)
     optimizer_to(optimizer, device)
-    # gpu_info(device)
+
     # load pretrained model
     pretrained_model = torch.load(model_path)
-    pretrained_optimizer = torch.load(optimizer_path, map_location='cpu')
     model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
-    optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
+    if not args.no_opt:
+        pretrained_optimizer = torch.load(optimizer_path, map_location='cpu')
+        optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
     scheduler = ReduceLROnPlateau(optimizer, 'min')
     criterion = torch.nn.L1Loss().cuda()
-    # gpu_info(device)
     # set random seed
     seed = args.seed
     print('Random seed: {}'.format(seed))
@@ -118,8 +119,7 @@ def main(args):
             adjust_learning_rate(optimizer, epoch)
             loss_values = []
             best_model = (float('inf'), None)
-            while not has_loss_plateaued(loss_values, threshold=0.0001, lookback=12) and epoch < 1000:
-                # gpu_info(device)
+            while not has_loss_plateaued(loss_values, threshold=0.0001, lookback=12) and epoch < 100:
                 prec1, avg_loss, cur_loss = train(args, data_loader, model, optimizer, criterion, epoch, device)
                 loss_values.append(cur_loss)
                 best_prec1 = max(prec1, best_prec1)
@@ -140,7 +140,11 @@ def main(args):
             torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{img_name}_last.pth')
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
         if args.reset:
-            optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
+            if not args.no_opt:
+                optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
+            else:
+                optimizer = torch.optim.Adam(model.parameters())
+                optimizer_to(optimizer, device)
             scheduler = ReduceLROnPlateau(optimizer, 'min')
 
 
