@@ -48,10 +48,12 @@ TEST_HR_DIR='/home/yossi_gandelsman/test_time_training/datasets/from_zishan/Set1
 TEST_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/ttt/set14/results/'
 TEST_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/pretrained/set14_swinir/'
 
+THR=0.01
+
 for LR in 0.001 0.0001 0.00001
 do
         CUDA_VISIBLE_DEVICES=6 python3 main_train_classifier.py \
-        --threshold 0.01 \
+        --threshold ${THR} \
         --lr ${LR} \
         --train_hr_dir ${TRAIN_HR_DIR} \
         --test_hr_dir ${TEST_HR_DIR} \
@@ -59,8 +61,7 @@ do
         --test_pretrain_dir ${TEST_PRETRAIN_DIR} \
         --train_ttt_dir ${TRAIN_TTT_DIR} \
         --test_ttt_dir ${TEST_TTT_DIR} \
-        --output_dir ${OUTPUT_DIR}${LR}
-
+        --output_dir ${OUTPUT_DIR}${LR}_${THR}
 done
 
 # Print completion time.

@@ -10,12 +10,16 @@ import os.path
 import time
 import random
 from data_loader import DataLoaderClassification
+from utils import utils_calculate_psnr_ssim as util
 import cv2
+import PIL.Image
+import tqdm
+import glob
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
     parser.add_argument('--num_images', default=10, type=int)
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--train_hr_dir', type=str, help='hq location')
     parser.add_argument('--train_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--train_pretrain_dir', type=str, help='pretrain location')
@@ -37,6 +41,75 @@ def get_args_parser():
                         help='epochs to warmup LR')
     parser.set_defaults(pin_mem=True)
     return parser
+
+
+def prep_image(path):
+    image = PIL.Image.open(path)
+    image = np.array(image) / 255.
+    image = image.transpose(2, 0, 1)
+    image = image[np.newaxis,...]
+    return torch.from_numpy(image).float()
+
+@torch.no_grad()
+def merge_and_psnr(model, ttt_path, orig_path, gt_path, device, scale=4):
+    model.eval()
+    merged_psnrs = []
+    merged_ssims = []
+    ttt_psnrs = []
+    ttt_ssims = []
+    orig_psnrs = []
+    orig_ssims = []
+    soft_merged_psnrs = []
+    soft_merged_ssims = []
+    
+    for gt_image_path in tqdm.tqdm(glob.glob(os.path.join(gt_path, '*.png'))):
+        image_name = os.path.split(gt_image_path)[-1]
+        gt_image = prep_image(gt_image_path).to(device)
+        ttt_image = prep_image(os.path.join(ttt_path, image_name)).to(device)
+        orig_image = prep_image(os.path.join(orig_path, image_name)).to(device)
+        model_output = model(torch.cat([orig_image, ttt_image], axis=1)) 
+        output = (model_output > 0).float()
+        
+        merged = ttt_image * output + orig_image * (1 - output)
+        soft_merged = ttt_image * torch.sigmoid(model_output) + orig_image * (1 - torch.sigmoid(model_output))
+        gt_image = gt_image[:, :, :merged.shape[2], :merged.shape[3]]
+        assert merged.shape == gt_image.shape
+        gt_image = (gt_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        merged = (merged[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        ttt_image = (ttt_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        orig_image = (orig_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        soft_merged = (soft_merged[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        # Merged:
+        psnr_y = util.calculate_psnr(merged, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(merged, gt_image, crop_border=scale, test_y_channel=True)
+        merged_psnrs.append(psnr_y)
+        merged_ssims.append(ssim_y)
+        # TTT
+        psnr_y = util.calculate_psnr(ttt_image, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(ttt_image, gt_image, crop_border=scale, test_y_channel=True)
+        ttt_psnrs.append(psnr_y)
+        ttt_ssims.append(ssim_y)
+        # ORIGINAL
+        psnr_y = util.calculate_psnr(orig_image, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(orig_image, gt_image, crop_border=scale, test_y_channel=True)
+        orig_psnrs.append(psnr_y)
+        orig_ssims.append(ssim_y)
+        # Soft merge
+        psnr_y = util.calculate_psnr(soft_merged, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(soft_merged, gt_image, crop_border=scale, test_y_channel=True)
+        soft_merged_psnrs.append(psnr_y)
+        soft_merged_ssims.append(ssim_y)
+        
+    print('Mean orig psnr:', np.mean(orig_psnrs))
+    print('Mean orig ssim:', np.mean(orig_ssims))
+    print('Mean ttt psnr:', np.mean(ttt_psnrs))
+    print('Mean ttt ssim:', np.mean(ttt_ssims))
+    print('Mean merged psnr:', np.mean(merged_psnrs))
+    print('Mean merged ssim:', np.mean(merged_ssims))
+    print('Soft mean merged psnr:', np.mean(soft_merged_psnrs))
+    print('Soft mean merged ssim:', np.mean(soft_merged_ssims))
+
+
 
 def main(args):
     # use cuda if available

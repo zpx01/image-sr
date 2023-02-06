@@ -219,7 +219,7 @@ def main():
                     # save image
                     output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
                     if output.ndim == 3:
-                        output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))  # CHW-RGB to HCW-BGR
+                        output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))  # CHW-RGB to HWC-BGR
                     output = (output * 255.0).round().astype(np.uint8)  # float32 to uint8
                     cv2.imwrite(f'{save_dir}/{imgname}_{args.img_identifier}_ttt.png', output)
 
