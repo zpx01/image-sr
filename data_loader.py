@@ -6,12 +6,13 @@ from data_loader_utils import *
 from test_time_config import Config
 import torch.utils.data as data
 import utils.utils_image as util
-from torchvision.transforms import RandomCrop, ToTensor
+from torchvision.transforms import RandomCrop, ToTensor, CenterCrop
 import torchvision.transforms as T
 import glob
 import tqdm
 import PIL.Image
 import random
+from utils.utils_calculate_psnr_ssim import to_y_channel
 
 class DataLoaderPretrained(data.Dataset):
     """
@@ -76,20 +77,26 @@ class DataLoaderClassification(data.Dataset):
     during test-time so that you can train/fine-tune your
     model in real time.
     """
-    def __init__(self, hr_path, orig_path, ttt_path, threshold, initial_signal_threshold: int = 200):
+    def __init__(self, hr_path, orig_path, ttt_path, threshold, 
+                 initial_signal_threshold: int = 200, split='train', img_size: int = 48):
         super(DataLoaderClassification, self).__init__()
-        self.random_crop = RandomCrop(128)
+        if split == 'train':
+            self.random_crop = RandomCrop(img_size)
+        else:
+            assert split == 'test'
+            self.random_crop = CenterCrop(img_size)
         self.to_tensor = ToTensor()
         self.threshold = threshold
         self.initial_signal_threshold = initial_signal_threshold
         self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
         self.orig_paths = []
+        self.split = split
         self.ttt_paths = []
         self.hr_paths = []
         for path in self._hr_paths:
             name = os.path.split(path)[-1].replace('.png', '')
-            ttt_image_name = f'{name}_1_24_23_ttt_ttt.png'
-            orig_image_name = ttt_image_name.replace('ttt', 'orig')
+            ttt_image_name = f'{name}.png'
+            orig_image_name = ttt_image_name
             # Do it once to eliminate cases that don't provide inforamtion:
             full_orig_path = os.path.join(orig_path, orig_image_name)
             full_ttt_path = os.path.join(ttt_path, ttt_image_name)
@@ -98,22 +105,51 @@ class DataLoaderClassification(data.Dataset):
             self.hr_paths.append(path)
 
     def create_masks(self, hr_image: np.array, orig_image: np.array, ttt_image: np.array):
+        hr_image = to_y_channel(hr_image)
+        ttt_image = to_y_channel(ttt_image)
+        orig_image = to_y_channel(orig_image)
         distance_ttt = np.mean((hr_image - ttt_image) ** 2, axis=2)
         distance_orig = np.mean((hr_image - orig_image) ** 2, axis=2)
         mask = np.zeros((hr_image.shape[0], hr_image.shape[1]))
         signal_mask = np.zeros((hr_image.shape[0], hr_image.shape[1]))
-        mask[distance_ttt < distance_orig - self.threshold] = 255.
-        signal_mask[distance_ttt < distance_orig - self.threshold] = 255.
+        mask[distance_ttt < distance_orig - self.threshold] = 1.
+        signal_mask[distance_ttt < distance_orig - self.threshold] = 1.
         mask[distance_orig < distance_ttt - self.threshold] = 0
-        signal_mask[distance_orig < distance_ttt - self.threshold] = 255.
-        return mask, signal_mask
+        signal_mask[distance_orig < distance_ttt - self.threshold] = 1.
+        # Balance masks:
+        if np.sum(signal_mask * mask) == 0 or np.sum(signal_mask *(1- mask)) == 0:
+            return np.zeros_like(mask), np.zeros_like(signal_mask)
+        mask *= signal_mask
+        balance = np.sum(signal_mask * mask) / np.sum(signal_mask *(1- mask))
+        if balance > 1:
+            signal_mask = (signal_mask * (1 - mask) + 
+                           signal_mask * mask * (np.random.uniform(0, 1, size=mask.shape) < (1 / balance)))
+        else:
+            signal_mask = (signal_mask * mask + 
+                           signal_mask * (1 - mask) * (np.random.uniform(0, 1, size=mask.shape) < balance))
+        mask *= signal_mask
+        return mask * 255, signal_mask * 255
+
+    def _crop_according_to_smallest(self, image1, image2, image3):
+        images = [np.array(x) for x in (image1, image2, image3)]
+        height = min([x.shape[0] for x in images])
+        width = min([x.shape[1] for x in images])
+        return [PIL.Image.fromarray(x[:height, :width]) for x in images]
 
     def __getitem__(self, index):
         # generate some image pair
         image_orig = PIL.Image.open(self.orig_paths[index])
         image_ttt = PIL.Image.open(self.ttt_paths[index])
         image_hr =  PIL.Image.open(self.hr_paths[index])
-        mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
+        (image_orig, 
+         image_ttt, 
+         image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
+        try:
+            mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
+        except ValueError as e:
+            print(self.orig_paths[index], self.ttt_paths[index], self.hr_paths[index])
+            print(e)
+            raise e
         mask = PIL.Image.fromarray(np.uint8(mask))
         signal_mask = PIL.Image.fromarray(np.uint8(signal_mask)) 
         
@@ -121,8 +157,11 @@ class DataLoaderClassification(data.Dataset):
         mask = self.to_tensor(mask)
         signal_mask = self.to_tensor(signal_mask)
         image_ttt = self.to_tensor(image_ttt)
-        params = self.random_crop.get_params(image_orig, (48, 48))
-        signal_mask = T.functional.crop(signal_mask, *params)
+        if self.split == 'train':
+            params = self.random_crop.get_params(image_orig, (48, 48))
+            signal_mask = T.functional.crop(signal_mask, *params)
+        else:
+            signal_mask = self.random_crop(signal_mask)
         tries = 0
         while torch.sum(signal_mask) < self.initial_signal_threshold:
             tries += 1
@@ -132,6 +171,9 @@ class DataLoaderClassification(data.Dataset):
                 image_orig = PIL.Image.open(self.orig_paths[index])
                 image_ttt = PIL.Image.open(self.ttt_paths[index])
                 image_hr =  PIL.Image.open(self.hr_paths[index])
+                (image_orig, 
+                 image_ttt, 
+                 image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
                 mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
                 mask = PIL.Image.fromarray(np.uint8(mask))
                 signal_mask = PIL.Image.fromarray(np.uint8(signal_mask)) 
@@ -139,12 +181,19 @@ class DataLoaderClassification(data.Dataset):
                 mask = self.to_tensor(mask)
                 signal_mask = self.to_tensor(signal_mask)
                 image_ttt = self.to_tensor(image_ttt)
-
-            params = self.random_crop.get_params(image_orig, (48, 48))
-            signal_mask = T.functional.crop(signal_mask, *params)
-        image_orig = T.functional.crop(image_orig, *params)
-        image_ttt = T.functional.crop(image_ttt, *params)
-        mask = T.functional.crop(mask, *params)
+            if self.split == 'train':
+                params = self.random_crop.get_params(image_orig, (48, 48))
+                signal_mask = T.functional.crop(signal_mask, *params)
+            else:
+                signal_mask = self.random_crop(signal_mask) 
+        if self.split == 'train':
+            image_orig = T.functional.crop(image_orig, *params)
+            image_ttt = T.functional.crop(image_ttt, *params)
+            mask = T.functional.crop(mask, *params)
+        else:
+            image_orig = self.random_crop(image_orig)
+            image_ttt = self.random_crop(image_ttt)
+            mask = self.random_crop(mask)
         return image_orig, image_ttt, mask, signal_mask
 
     def __len__(self):

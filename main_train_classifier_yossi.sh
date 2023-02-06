@@ -41,21 +41,27 @@ export PYTHONUNBUFFERED=1
 # Do all the research.
 
 OUTPUT_DIR='/home/yossi_gandelsman/test_time_training/second_stage/'
-TRAIN_HR_DIR='/home/yossi_gandelsman/test_time_training/first_stage/DIV2K_valid_HR_sub/'
-TRAIN_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_ttt/'
-TRAIN_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_orig/'
-TEST_HR_DIR='/home/yossi_gandelsman/test_time_training/first_stage/DIV2K_valid_HR_sub/'
-TEST_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_ttt/'
-TEST_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/swinir_classical_sr_x4_1_24_23_orig/'
+TRAIN_HR_DIR='/home/yossi_gandelsman/test_time_training/datasets/from_zishan/trainValidH/DIV2K_valid_HR_sub/'
+TRAIN_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/ttt/div2k/results/'
+TRAIN_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/pretrained/swinir_classical_sr_x4_1_30_23/'
+TEST_HR_DIR='/home/yossi_gandelsman/test_time_training/datasets/from_zishan/Set14_kair/original/'
+TEST_TTT_DIR='/home/yossi_gandelsman/test_time_training/first_stage/ttt/set14/results/'
+TEST_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/pretrained/set14_swinir/'
 
-python3 main_train_classifier.py \
+for LR in 0.001 0.0001 0.00001
+do
+        CUDA_VISIBLE_DEVICES=6 python3 main_train_classifier.py \
         --threshold 0.01 \
+        --lr ${LR} \
         --train_hr_dir ${TRAIN_HR_DIR} \
         --test_hr_dir ${TEST_HR_DIR} \
         --train_pretrain_dir ${TRAIN_PRETRAIN_DIR} \
         --test_pretrain_dir ${TEST_PRETRAIN_DIR} \
         --train_ttt_dir ${TRAIN_TTT_DIR} \
         --test_ttt_dir ${TEST_TTT_DIR} \
-        --output_dir ${OUTPUT_DIR}
+        --output_dir ${OUTPUT_DIR}${LR}
+
+done
+
 # Print completion time.
 

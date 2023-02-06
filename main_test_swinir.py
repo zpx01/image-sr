@@ -377,7 +377,8 @@ def get_image_pair(args, path):
     # 001 classical image sr/ 002 lightweight image sr (load lq-gt image pairs)
     if args.task in ['classical_sr', 'lightweight_sr']:
         img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
-        if 'HR' not in imgname:
+        if 'HR' not in imgname: 
+            # TODO(yossi): This is hacky! 
             # print(f'{args.folder_lq}/{imgname}{imgext}')
             try:
                 img_lq = cv2.imread(f'{args.folder_lq}/{imgname}{imgext}', cv2.IMREAD_COLOR).astype(
