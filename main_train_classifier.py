@@ -52,6 +52,7 @@ def prep_image(path):
 
 @torch.no_grad()
 def merge_and_psnr(model, ttt_path, orig_path, gt_path, device, scale=4):
+    # TODO(Zeeshan): Verify that the cropping is right (it is not).
     model.eval()
     merged_psnrs = []
     merged_ssims = []
@@ -116,9 +117,12 @@ def main(args):
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     
     # instantiate model
-    model = net(upscale=1, in_chans=6, out_chans=1, img_size=args.img_size, window_size=8,
-                img_range=1., depths=[6, 6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6, 6],
-                mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv', rescale_back=False)
+    model = net(upscale=1, in_chans=6, out_chans=1, 
+                img_size=args.img_size, window_size=8,
+                img_range=1., depths=[6, 6, 6, 6, 6, 6, 6], 
+                embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6, 6],
+                mlp_ratio=2, upsampler='pixelshuffle', 
+                resi_connection='1conv', rescale_back=False)
     # The model is a bit bigger than the original model (one more layer)
     best_prec1 = 0
     
@@ -182,7 +186,7 @@ def main(args):
         }
         print(f'Done testing. Epoch [{epoch:05}]: {test_prec1}')
         if (epoch + 1) % 50 == 0:
-            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}_{prec1:.2f}.pth')
+            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}_{prec1:.2f}_{test_prec1:.2f}.pth')
 
 
 def optimizer_to(optim, device):
