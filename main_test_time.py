@@ -15,7 +15,7 @@ import cv2
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import math
 
-GPU_DEVICES = 1 # Set to number of GPUs available!
+GPU_DEVICES = 6 # Set to number of GPUs available!
 
 
 def get_args_parser():
