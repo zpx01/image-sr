@@ -68,6 +68,69 @@ class DataLoaderPretrained(data.Dataset):
         return len(self.hr_father_sources)
 
 
+class DataLoaderMerger(data.Dataset):
+    """
+    A DataLoader class for test-time training.
+    This class generates augmentations of test images
+    during test-time so that you can train/fine-tune your
+    model in real time.
+    """
+    def __init__(self, hr_path, orig_path, ttt_path, split='train', img_size: int = 48):
+        super(DataLoaderClassification, self).__init__()
+        if split == 'train':
+            self.random_crop = RandomCrop(img_size)
+        else:
+            assert split == 'test'
+            self.random_crop = CenterCrop(img_size)
+        self.to_tensor = ToTensor()
+        self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
+        self.orig_paths = []
+        self.split = split
+        self.img_size = img_size
+        self.ttt_paths = []
+        self.hr_paths = []
+        for path in self._hr_paths:
+            name = os.path.split(path)[-1].replace('.png', '')
+            ttt_image_name = f'{name}.png'
+            orig_image_name = ttt_image_name
+            # Do it once to eliminate cases that don't provide inforamtion:
+            full_orig_path = os.path.join(orig_path, orig_image_name)
+            full_ttt_path = os.path.join(ttt_path, ttt_image_name)
+            self.orig_paths.append(full_orig_path)
+            self.ttt_paths.append(full_ttt_path)
+            self.hr_paths.append(path)
+
+    def _crop_according_to_smallest(self, image1, image2, image3):
+        images = [np.array(x) for x in (image1, image2, image3)]
+        height = min([x.shape[0] for x in images])
+        width = min([x.shape[1] for x in images])
+        return [PIL.Image.fromarray(x[:height, :width]) for x in images]
+
+    def __getitem__(self, index):
+        # generate some image pair
+        image_orig = PIL.Image.open(self.orig_paths[index])
+        image_ttt = PIL.Image.open(self.ttt_paths[index])
+        image_hr =  PIL.Image.open(self.hr_paths[index])
+        (image_orig, 
+         image_ttt, 
+         image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
+        
+        image_orig = self.to_tensor(image_orig)
+        image_ttt = self.to_tensor(image_ttt)
+        image_hr = self.to_tensor(image_hr)
+        if self.split == 'train':
+            params = self.random_crop.get_params(image_orig, (self.img_size, self.img_size))
+            image_orig = T.functional.crop(image_orig, *params)
+            image_ttt = T.functional.crop(image_ttt, *params)
+            image_hr = T.functional.crop(image_hr, *params)
+        else:
+            image_orig = self.random_crop(image_orig)
+            image_ttt = self.random_crop(image_ttt)
+            image_hr = self.random_crop(image_hr)
+        return image_orig, image_ttt, image_hr
+
+    def __len__(self):
+        return len(self.hr_paths)
 
 
 class DataLoaderClassification(data.Dataset):
@@ -158,7 +221,7 @@ class DataLoaderClassification(data.Dataset):
         signal_mask = self.to_tensor(signal_mask)
         image_ttt = self.to_tensor(image_ttt)
         if self.split == 'train':
-            params = self.random_crop.get_params(image_orig, (48, 48))
+            params = self.random_crop.get_params(image_orig, (self.img_size, self.img_size))
             signal_mask = T.functional.crop(signal_mask, *params)
         else:
             signal_mask = self.random_crop(signal_mask)
@@ -198,11 +261,3 @@ class DataLoaderClassification(data.Dataset):
 
     def __len__(self):
         return len(self.hr_paths)
-
-
-    
-    
-    
-    
-
-    
