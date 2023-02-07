@@ -232,6 +232,7 @@ def has_loss_plateaued(loss_values, threshold=0.0001, lookback=12, num_plateau=6
         if plateau_count == num_plateau:
             return True
     return False
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
