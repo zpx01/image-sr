@@ -14,6 +14,7 @@ import PIL.Image
 import random
 from utils.utils_calculate_psnr_ssim import to_y_channel
 
+
 class DataLoaderPretrained(data.Dataset):
     """
     A DataLoader class for test-time training.
@@ -65,7 +66,7 @@ class DataLoaderPretrained(data.Dataset):
         return self.lr[index], self.hr[index]
     
     def __len__(self):
-        return len(self.hr_father_sources)
+        return len(self.hr_father_sources)  
 
 
 class DataLoaderMerger(data.Dataset):
