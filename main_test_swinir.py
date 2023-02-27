@@ -68,84 +68,17 @@ def main():
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
         model.eval()
         for idx, path in enumerate(sorted(glob.glob(os.path.join(folder, '*')))):
-            # read image
-            print(f'Glob path: {path}')
-            img_n = re.findall(r'[\w-]+\.', path)
-            img_n = img_n[0].replace('.', '')
-            img_n = img_n.replace('/', '')
-            print("IMG_N:", img_n)
-            imgname, img_lq, img_gt = get_image_pair(args, path)  # image to HWC-BGR, float32
-            img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
-            img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
-            # inference
-            with torch.no_grad():
-                # pad input image to be a multiple of window_size
-                _, _, h_old, w_old = img_lq.size()
-                h_pad = (h_old // window_size + 1) * window_size - h_old
-                w_pad = (w_old // window_size + 1) * window_size - w_old
-                img_lq = torch.cat([img_lq, torch.flip(img_lq, [2])], 2)[:, :, :h_old + h_pad, :]
-                img_lq = torch.cat([img_lq, torch.flip(img_lq, [3])], 3)[:, :, :, :w_old + w_pad]
-                img_lq.to(device)
-                output = test(img_lq, model, args, window_size)
-                output = output[..., :h_old * args.scale, :w_old * args.scale]
-
-
-            # save image
+            imgname, img_lq, img_gt, output = inference(args, model, path, device, window_size)
+             # save image
             output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
             if output.ndim == 3:
                 output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))  # CHW-RGB to HCW-BGR
             output = (output * 255.0).round().astype(np.uint8)  # float32 to uint8
             cv2.imwrite(f'{save_dir}/{imgname}_{args.img_identifier}_orig.png', output)
+            _, _, h_old, w_old = img_lq.size()
+            eval_inference(args, img_gt, output, h_old, w_old, border, test_results, res_strs, imgname, idx)
+            summarize_results(args, img_gt, test_results, save_dir, res_strs, results_file_path)
 
-            # evaluate psnr/ssim/psnr_b
-            if img_gt is not None:
-                img_gt = (img_gt * 255.0).round().astype(np.uint8)  # float32 to uint8
-                img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
-                img_gt = np.squeeze(img_gt)
-
-                psnr = util.calculate_psnr(output, img_gt, crop_border=border)
-                ssim = util.calculate_ssim(output, img_gt, crop_border=border)
-                test_results['psnr'].append(psnr)
-                test_results['ssim'].append(ssim)
-                if img_gt.ndim == 3:  # RGB image
-                    psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
-                    ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
-                    test_results['psnr_y'].append(psnr_y)
-                    test_results['ssim_y'].append(ssim_y)
-                if args.task in ['jpeg_car']:
-                    psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border, test_y_channel=False)
-                    test_results['psnr_b'].append(psnr_b)
-                s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
-                print(s)
-                res_strs.append(s)
-            else:
-                s = 'Testing {:d} {:20s}\n'.format(idx, imgname)
-                print(s)
-                res_strs.append(s)
-
-            # summarize psnr/ssim
-            if img_gt is not None:
-                ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
-                ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
-                s = '\n{} \n-- Average PSNR/SSIM(RGB): {:.2f} dB; {:.4f}\n'.format(save_dir, ave_psnr, ave_ssim)
-                print(s)
-                res_strs.append(s)
-
-                if img_gt.ndim == 3:
-                    ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
-                    ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
-                    s = '-- Average PSNR_Y/SSIM_Y: {:.2f} dB; {:.4f}\n'.format(ave_psnr_y, ave_ssim_y)
-                    print(s)
-                    res_strs.append(s)
-                if args.task in ['jpeg_car']:
-                    ave_psnr_b = sum(test_results['psnr_b']) / len(test_results['psnr_b'])
-                    s = '-- Average PSNR_B: {:.2f} dB\n'.format(ave_psnr_b)
-                    print(s)
-                    res_strs.append(s)
-        
-            res_file = open(results_file_path, 'w')
-            res_file.writelines(res_strs)
-            res_file.close()
     elif args.type == 'ttt':
         print("Starting TTT Testing...")
         for idx, model_path in enumerate(sorted(glob.glob(os.path.join(args.models_dir, '*')))):
@@ -154,41 +87,13 @@ def main():
                 img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
                 img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
                 _, _, h_old, w_old = img_lq.size()
-                h_pad = (h_old // window_size + 1) * window_size - h_old
-                w_pad = (w_old // window_size + 1) * window_size - w_old
                 img_pred_path = f'{save_dir}/{imgname}_{args.img_identifier}_ttt.png'
                 if os.path.exists(img_pred_path):
                     print(f'Skipping {imgname}...')
                     output = cv2.imread(img_pred_path, cv2.IMREAD_COLOR)
                     # evaluate psnr/ssim/psnr_b
-                    if img_gt is not None:
-                        img_gt = (img_gt * 255.0).round().astype(np.uint8)  # float32 to uint8
-                        img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
-                        img_gt = np.squeeze(img_gt)
-
-                        psnr = util.calculate_psnr(output, img_gt, crop_border=border)
-                        ssim = util.calculate_ssim(output, img_gt, crop_border=border)
-                        test_results['psnr'].append(psnr)
-                        test_results['ssim'].append(ssim)
-                        if img_gt.ndim == 3:  # RGB image
-                            psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
-                            ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
-                            test_results['psnr_y'].append(psnr_y)
-                            test_results['ssim_y'].append(ssim_y)
-                        if args.task in ['jpeg_car']:
-                            psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border)
-                            test_results['psnr_b'].append(psnr_b)
-                        res_strs.append(model_path)
-                        s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
-                        print(s)
-                        res_strs.append(s)
-                    else:
-                        s = 'Testing {:d} {:20s}\n'.format(idx, imgname)
-                        print(s)
-                        res_strs.append(s)
-                        continue
+                    eval_inference(args, img_gt, output, h_old, w_old, border, test_results, res_strs, imgname, idx)
                     continue
-                print(f"Starting {imgname}")
                 model = define_model(args)
                 model = model.to(device)
                 pretrained_model = torch.load(model_path)
@@ -201,79 +106,97 @@ def main():
                 img_n = img_n[0].replace('.', '')
                 img_n = img_n.replace('/', '')
                 if img_n in model_path:
-                    imgname, img_lq, img_gt = get_image_pair(args, path)  # image to HWC-BGR, float32
-                    img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
-                    img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
-                    # inference
-                    with torch.no_grad():
-                        # pad input image to be a multiple of window_size
-                        _, _, h_old, w_old = img_lq.size()
-                        h_pad = (h_old // window_size + 1) * window_size - h_old
-                        w_pad = (w_old // window_size + 1) * window_size - w_old
-                        img_lq = torch.cat([img_lq, torch.flip(img_lq, [2])], 2)[:, :, :h_old + h_pad, :]
-                        img_lq = torch.cat([img_lq, torch.flip(img_lq, [3])], 3)[:, :, :, :w_old + w_pad]
-                        img_lq.to(device)
-                        output = test(img_lq, model, args, window_size)
-                        output = output[..., :h_old * args.scale, :w_old * args.scale]
-
+                    imgname, img_lq, img_gt, output = inference(args, model, path, device, window_size)
                     # save image
                     output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
                     if output.ndim == 3:
                         output = np.transpose(output[[2, 1, 0], :, :], (1, 2, 0))  # CHW-RGB to HWC-BGR
                     output = (output * 255.0).round().astype(np.uint8)  # float32 to uint8
                     cv2.imwrite(f'{save_dir}/{imgname}_{args.img_identifier}_ttt.png', output)
-
-                    # evaluate psnr/ssim/psnr_b
-                    if img_gt is not None:
-                        img_gt = (img_gt * 255.0).round().astype(np.uint8)  # float32 to uint8
-                        img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
-                        img_gt = np.squeeze(img_gt)
-
-                        psnr = util.calculate_psnr(output, img_gt, crop_border=border)
-                        ssim = util.calculate_ssim(output, img_gt, crop_border=border)
-                        test_results['psnr'].append(psnr)
-                        test_results['ssim'].append(ssim)
-                        if img_gt.ndim == 3:  # RGB image
-                            psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
-                            ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
-                            test_results['psnr_y'].append(psnr_y)
-                            test_results['ssim_y'].append(ssim_y)
-                        if args.task in ['jpeg_car']:
-                            psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border)
-                            test_results['psnr_b'].append(psnr_b)
-                        res_strs.append(model_path)
-                        s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
-                        print(s)
-                        res_strs.append(s)
-                    else:
-                        s = 'Testing {:d} {:20s}\n'.format(idx, imgname)
-                        print(s)
-                        res_strs.append(s)
-
-                    # summarize psnr/ssim
-                    if img_gt is not None:
-                        ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
-                        ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
-                        s = '\n{} \n-- Average PSNR/SSIM(RGB): {:.2f} dB; {:.4f}\n'.format(save_dir, ave_psnr, ave_ssim)
-                        print(s)
-                        res_strs.append(s)
-
-                        if img_gt.ndim == 3:
-                            ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
-                            ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
-                            s = '-- Average PSNR_Y/SSIM_Y: {:.2f} dB; {:.4f}\n'.format(ave_psnr_y, ave_ssim_y)
-                            print(s)
-                            res_strs.append(s)
-                        if args.task in ['jpeg_car']:
-                            ave_psnr_b = sum(test_results['psnr_b']) / len(test_results['psnr_b'])
-                            s = '-- Average PSNR_B: {:.2f} dB\n'.format(ave_psnr_b)
-                            print(s)
-                            res_strs.append(s)
+                    eval_inference(args, img_gt, output, h_old, w_old, border, test_results, res_strs, imgname, idx)
+                    summarize_results(args, img_gt, test_results, save_dir, res_strs, results_file_path)
                     
         res_file = open(results_file_path, 'w')
         res_file.writelines(res_strs)
         res_file.close()
 
+
+def summarize_results(args, img_gt, test_results, save_dir, res_strs, results_file_path):
+    # summarize psnr/ssim
+    if img_gt is not None:
+        ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
+        ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
+        s = '\n{} \n-- Average PSNR/SSIM(RGB): {:.2f} dB; {:.4f}\n'.format(save_dir, ave_psnr, ave_ssim)
+        print(s)
+        res_strs.append(s)
+
+        if img_gt.ndim == 3:
+            ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
+            ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
+            s = '-- Average PSNR_Y/SSIM_Y: {:.2f} dB; {:.4f}\n'.format(ave_psnr_y, ave_ssim_y)
+            print(s)
+            res_strs.append(s)
+        if args.task in ['jpeg_car']:
+            ave_psnr_b = sum(test_results['psnr_b']) / len(test_results['psnr_b'])
+            s = '-- Average PSNR_B: {:.2f} dB\n'.format(ave_psnr_b)
+            print(s)
+            res_strs.append(s)
+
+    res_file = open(results_file_path, 'w')
+    res_file.writelines(res_strs)
+    res_file.close()
+
+def eval_inference(args, img_gt, output, h_old, w_old, border, test_results, res_strs, imgname, idx):
+    # evaluate psnr/ssim/psnr_b
+    if img_gt is not None:
+        img_gt = (img_gt * 255.0).round().astype(np.uint8)  # float32 to uint8
+        img_gt = img_gt[:h_old * args.scale, :w_old * args.scale, ...]  # crop gt
+        img_gt = np.squeeze(img_gt)
+
+        psnr = util.calculate_psnr(output, img_gt, crop_border=border)
+        ssim = util.calculate_ssim(output, img_gt, crop_border=border)
+        test_results['psnr'].append(psnr)
+        test_results['ssim'].append(ssim)
+        if img_gt.ndim == 3:  # RGB image
+            psnr_y = util.calculate_psnr(output, img_gt, crop_border=border, test_y_channel=True)
+            ssim_y = util.calculate_ssim(output, img_gt, crop_border=border, test_y_channel=True)
+            test_results['psnr_y'].append(psnr_y)
+            test_results['ssim_y'].append(ssim_y)
+        if args.task in ['jpeg_car']:
+            psnr_b = util.calculate_psnrb(output, img_gt, crop_border=border, test_y_channel=False)
+            test_results['psnr_b'].append(psnr_b)
+        s = 'Testing {:d} {:20s} - PSNR: {:.2f} dB; SSIM: {:.4f}; PSNR_Y: {:.2f} dB; SSIM_Y: {:.4f}; PSNR_B: {:.2f} dB.\n'.format(idx, imgname, psnr, ssim, psnr_y, ssim_y, psnr_b)
+        print(s)
+        res_strs.append(s)
+    else:
+        s = 'Testing {:d} {:20s}\n'.format(idx, imgname)
+        print(s)
+        res_strs.append(s)
+    
+
+
+def inference(args, model, path, device, window_size):
+    # read image
+    print(f'Glob path: {path}')
+    img_n = re.findall(r'[\w-]+\.', path)
+    img_n = img_n[0].replace('.', '')
+    img_n = img_n.replace('/', '')
+    print("IMG_N:", img_n)
+    imgname, img_lq, img_gt = get_image_pair(args, path)  # image to HWC-BGR, float32
+    img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+    img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
+    # inference
+    with torch.no_grad():
+        # pad input image to be a multiple of window_size
+        _, _, h_old, w_old = img_lq.size()
+        h_pad = (h_old // window_size + 1) * window_size - h_old
+        w_pad = (w_old // window_size + 1) * window_size - w_old
+        img_lq = torch.cat([img_lq, torch.flip(img_lq, [2])], 2)[:, :, :h_old + h_pad, :]
+        img_lq = torch.cat([img_lq, torch.flip(img_lq, [3])], 3)[:, :, :, :w_old + w_pad]
+        img_lq.to(device)
+        output = test(img_lq, model, args, window_size)
+        output = output[..., :h_old * args.scale, :w_old * args.scale]
+    return imgname, img_lq, img_gt, output
 
 def define_model(args):
     # 001 classical image sr
