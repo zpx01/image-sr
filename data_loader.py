@@ -102,6 +102,7 @@ class DataLoaderMerger(data.Dataset):
             self.hr_paths.append(path)
 
     def _crop_according_to_smallest(self, image1, image2, image3):
+        # TODO(Zeeshan): verify that we don't train on something we are not testing on
         images = [np.array(x) for x in (image1, image2, image3)]
         height = min([x.shape[0] for x in images])
         width = min([x.shape[1] for x in images])
@@ -151,6 +152,7 @@ class DataLoaderClassification(data.Dataset):
             self.random_crop = CenterCrop(img_size)
         self.to_tensor = ToTensor()
         self.threshold = threshold
+        self.img_size = img_size
         self.initial_signal_threshold = initial_signal_threshold
         self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
         self.orig_paths = []
@@ -195,6 +197,7 @@ class DataLoaderClassification(data.Dataset):
         return mask * 255, signal_mask * 255
 
     def _crop_according_to_smallest(self, image1, image2, image3):
+        # TODO(Zeeshan): verify that we don't train on something we are not testing on
         images = [np.array(x) for x in (image1, image2, image3)]
         height = min([x.shape[0] for x in images])
         width = min([x.shape[1] for x in images])
@@ -228,6 +231,7 @@ class DataLoaderClassification(data.Dataset):
             signal_mask = self.random_crop(signal_mask)
         tries = 0
         while torch.sum(signal_mask) < self.initial_signal_threshold:
+            # While we don't have enought signal.
             tries += 1
             if tries == 10: 
                 tries = 0

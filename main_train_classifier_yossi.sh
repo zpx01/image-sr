@@ -50,7 +50,7 @@ TEST_PRETRAIN_DIR='/home/yossi_gandelsman/test_time_training/first_stage/pretrai
 
 THR=0.01
 
-for LR in 0.001 0.0001 0.00001
+for LR in 0.0001 0.00001
 do
         CUDA_VISIBLE_DEVICES=6 python3 main_train_classifier.py \
         --threshold ${THR} \
