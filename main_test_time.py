@@ -43,6 +43,27 @@ def gpu_info(device):
         print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
         print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB\n')
 
+def init_test_time(args, model_path, optimizer_path, device):
+        # instantiate model
+        model = net(upscale=args.scale, in_chans=3, img_size=48, window_size=8,
+                    img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
+                    mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
+        optimizer = torch.optim.SGD(model.parameters(), momentum=0.9, weight_decay=0.2, lr=1e-5)
+        param_key_g = 'params'
+        model = model.to(device)
+        optimizer_to(optimizer, device)
+
+        # load pretrained model
+        pretrained_model = torch.load(model_path)
+        model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
+        if not args.no_opt:
+            pretrained_optimizer = torch.load(optimizer_path, map_location='cpu')
+            optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
+        scheduler = ReduceLROnPlateau(optimizer, 'min')
+        criterion = torch.nn.L1Loss().cuda()
+        return model, pretrained_model, pretrained_optimizer, scheduler, criterion
+
+
 def main(args):
     # use cuda if available
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -50,6 +71,7 @@ def main(args):
     model_path = args.model_path
     optimizer_path = args.opt_path
 
+    model, pretrained_model, pretrained_optimizer, scheduler, criterion = init_test_time(args, model_path, optimizer_path, device)
     # setting device on GPU if available, else CPU
     print('Using device:\n', device)
 
@@ -57,22 +79,8 @@ def main(args):
     # gpu_info(device)
 
     # instantiate model
-    model = net(upscale=args.scale, in_chans=3, img_size=48, window_size=8,
-                img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
-                mlp_ratio=2, upsampler='pixelshuffle', resi_connection='1conv')
-    optimizer = torch.optim.SGD(model.parameters(), momentum=0.9, weight_decay=0.2, lr=1e-5)
     param_key_g = 'params'
-    model = model.to(device)
-    optimizer_to(optimizer, device)
 
-    # load pretrained model
-    pretrained_model = torch.load(model_path)
-    model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
-    if not args.no_opt:
-        pretrained_optimizer = torch.load(optimizer_path, map_location='cpu')
-        optimizer.load_state_dict(pretrained_optimizer[param_key_g] if param_key_g in pretrained_optimizer.keys() else pretrained_optimizer)
-    scheduler = ReduceLROnPlateau(optimizer, 'min')
-    criterion = torch.nn.L1Loss().cuda()
     # set random seed
     seed = args.seed
     print('Random seed: {}'.format(seed))
@@ -92,7 +100,6 @@ def main(args):
         print(path)
         img_name = path[45:].replace('.png', '')
         img_name = img_name.replace('/', '')
-        
         if os.path.exists(f'{save_dir}/checkpoint_swinir_{img_name}_last.pth'):
             continue
         img_lq = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255
