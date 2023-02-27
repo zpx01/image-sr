@@ -101,9 +101,14 @@ class DataLoaderMerger(data.Dataset):
             self.ttt_paths.append(full_ttt_path)
             self.hr_paths.append(path)
 
-    def _crop_according_to_smallest(self, image1, image2, image3):
-        # TODO(Zeeshan): verify that we don't train on something we are not testing on
-        images = [np.array(x) for x in (image1, image2, image3)]
+    def _crop_according_to_smallest(self, image1, image2, image3, image4, scale=4):
+        # (FIXED) Added appropriate cropping for GT
+        images = [np.array(x) for x in (image1, image2, image3, image4)]
+        images[3] = np.transpose(images[3] if images[3].shape[2] == 1 else images[3][:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+        images[3] = torch.from_numpy(images[3]).float().unsqueeze(0)  # CHW-RGB to NCHW-RGB
+        _, _, h_old, w_old = images[3].size()
+        images[2] = images[2][:h_old * scale, :w_old * scale, ...]  # crop gt
+        images[2] = np.squeeze(images[2])
         height = min([x.shape[0] for x in images])
         width = min([x.shape[1] for x in images])
         return [PIL.Image.fromarray(x[:height, :width]) for x in images]
@@ -113,9 +118,11 @@ class DataLoaderMerger(data.Dataset):
         image_orig = PIL.Image.open(self.orig_paths[index])
         image_ttt = PIL.Image.open(self.ttt_paths[index])
         image_hr =  PIL.Image.open(self.hr_paths[index])
+        image_lr = PIL.Image.open(self.lr_paths[index])
         (image_orig, 
          image_ttt, 
-         image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
+         image_hr, 
+         image_lr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr, image_lr, scale=4)
         
         image_orig = self.to_tensor(image_orig)
         image_ttt = self.to_tensor(image_ttt)
@@ -142,7 +149,7 @@ class DataLoaderClassification(data.Dataset):
     during test-time so that you can train/fine-tune your
     model in real time.
     """
-    def __init__(self, hr_path, orig_path, ttt_path, threshold, 
+    def __init__(self, hr_path, lr_path, orig_path, ttt_path, threshold, 
                  initial_signal_threshold: int = 200, split='train', img_size: int = 48):
         super(DataLoaderClassification, self).__init__()
         if split == 'train':
@@ -155,11 +162,13 @@ class DataLoaderClassification(data.Dataset):
         self.img_size = img_size
         self.initial_signal_threshold = initial_signal_threshold
         self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
+        self._lr_paths = sorted(list(glob.glob(lr_path + '/*.png')))
         self.orig_paths = []
         self.split = split
         self.ttt_paths = []
         self.hr_paths = []
-        for path in self._hr_paths:
+        self.lr_paths = []
+        for idx, path in enumerate(self._hr_paths):
             name = os.path.split(path)[-1].replace('.png', '')
             ttt_image_name = f'{name}.png'
             orig_image_name = ttt_image_name
@@ -169,6 +178,7 @@ class DataLoaderClassification(data.Dataset):
             self.orig_paths.append(full_orig_path)
             self.ttt_paths.append(full_ttt_path)
             self.hr_paths.append(path)
+            self.lr_paths.append(self._lr_paths[idx])
 
     def create_masks(self, hr_image: np.array, orig_image: np.array, ttt_image: np.array):
         hr_image = to_y_channel(hr_image)
@@ -196,21 +206,28 @@ class DataLoaderClassification(data.Dataset):
         mask *= signal_mask
         return mask * 255, signal_mask * 255
 
-    def _crop_according_to_smallest(self, image1, image2, image3):
-        # TODO(Zeeshan): verify that we don't train on something we are not testing on
-        images = [np.array(x) for x in (image1, image2, image3)]
+    def _crop_according_to_smallest(self, image1, image2, image3, image4, scale=4):
+        # (FIXED) Added appropriate cropping for GT
+        images = [np.array(x) for x in (image1, image2, image3, image4)]
+        images[3] = np.transpose(images[3] if images[3].shape[2] == 1 else images[3][:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+        images[3] = torch.from_numpy(images[3]).float().unsqueeze(0)  # CHW-RGB to NCHW-RGB
+        _, _, h_old, w_old = images[3].size()
+        images[2] = images[2][:h_old * scale, :w_old * scale, ...]  # crop gt
+        images[2] = np.squeeze(images[2])
         height = min([x.shape[0] for x in images])
         width = min([x.shape[1] for x in images])
         return [PIL.Image.fromarray(x[:height, :width]) for x in images]
-
+        
     def __getitem__(self, index):
         # generate some image pair
         image_orig = PIL.Image.open(self.orig_paths[index])
         image_ttt = PIL.Image.open(self.ttt_paths[index])
         image_hr =  PIL.Image.open(self.hr_paths[index])
+        image_lr = PIL.Image.open(self.lr_paths[index])
         (image_orig, 
          image_ttt, 
-         image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
+         image_hr, 
+         image_lr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr, image_lr, scale=4)
         try:
             mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
         except ValueError as e:
@@ -239,9 +256,11 @@ class DataLoaderClassification(data.Dataset):
                 image_orig = PIL.Image.open(self.orig_paths[index])
                 image_ttt = PIL.Image.open(self.ttt_paths[index])
                 image_hr =  PIL.Image.open(self.hr_paths[index])
+                image_lr = PIL.Image.open(self.lr_paths[index])
                 (image_orig, 
-                 image_ttt, 
-                 image_hr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr)
+                image_ttt, 
+                image_hr, 
+                image_lr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr, image_lr, scale=4)
                 mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
                 mask = PIL.Image.fromarray(np.uint8(mask))
                 signal_mask = PIL.Image.fromarray(np.uint8(signal_mask)) 
