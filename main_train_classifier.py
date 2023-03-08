@@ -35,7 +35,7 @@ def get_args_parser():
     parser.add_argument('--lr', default=0.00001, type=float, help='Learning rate')
     parser.add_argument('--min_lr', default=0.000001, type=float, help='Min learning rate')
     parser.add_argument('--seed', default=2023, type=int, help='training seed')
-    parser.add_argument('--img_size', default=48, type=int, help='training seed')
+    parser.add_argument('--img_size', default=96, type=int, help='training seed')
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')

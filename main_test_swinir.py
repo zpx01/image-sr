@@ -68,7 +68,10 @@ def main():
         model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
         model.eval()
         for idx, path in enumerate(sorted(glob.glob(os.path.join(folder, '*')))):
-            imgname, img_lq, img_gt, output = inference(args, model, path, device, window_size)
+            imgname, img_lq, img_gt = get_image_pair(args, path)
+            img_lq = np.transpose(img_lq if img_lq.shape[2] == 1 else img_lq[:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+            img_lq = torch.from_numpy(img_lq).float().unsqueeze(0).to(device)  # CHW-RGB to NCHW-RGB
+            output = inference(args, model, path, device, window_size)
              # save image
             output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
             if output.ndim == 3:
@@ -106,7 +109,8 @@ def main():
                 img_n = img_n[0].replace('.', '')
                 img_n = img_n.replace('/', '')
                 if img_n in model_path:
-                    imgname, img_lq, img_gt, output = inference(args, model, path, device, window_size)
+                    imgname, img_lq, img_gt = get_image_pair(args, path)
+                    output = inference(args, model, path, device, window_size)
                     # save image
                     output = output.data.squeeze().float().cpu().clamp_(0, 1).numpy()
                     if output.ndim == 3:
@@ -155,6 +159,7 @@ def eval_inference(args, img_gt, output, h_old, w_old, border, test_results, res
 
         psnr = util.calculate_psnr(output, img_gt, crop_border=border)
         ssim = util.calculate_ssim(output, img_gt, crop_border=border)
+        psnr_b = 0
         test_results['psnr'].append(psnr)
         test_results['ssim'].append(ssim)
         if img_gt.ndim == 3:  # RGB image
@@ -196,7 +201,7 @@ def inference(args, model, path, device, window_size):
         img_lq.to(device)
         output = test(img_lq, model, args, window_size)
         output = output[..., :h_old * args.scale, :w_old * args.scale]
-    return imgname, img_lq, img_gt, output
+    return output
 
 def define_model(args):
     # 001 classical image sr
