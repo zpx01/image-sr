@@ -31,7 +31,7 @@ class DataLoaderPretrained(data.Dataset):
         self.sf = sf
         self.kernel = None
         self.conf = conf
-        self.num_workers=8
+        self.num_workers=10
 
     def generate_hr_father(self):
         return random_augment(ims=self.hr_father_sources,
@@ -136,7 +136,7 @@ class DataLoaderMerger(data.Dataset):
             image_orig = self.random_crop(image_orig)
             image_ttt = self.random_crop(image_ttt)
             image_hr = self.random_crop(image_hr)
-        return image_orig, image_ttt, image_hr
+        return (image_orig, image_ttt), image_hr
 
     def __len__(self):
         return len(self.hr_paths)
@@ -160,6 +160,7 @@ class DataLoaderClassification(data.Dataset):
         self.to_tensor = ToTensor()
         self.threshold = threshold
         self.img_size = img_size
+        self.num_workers = 8
         self.initial_signal_threshold = initial_signal_threshold
         self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
         self._lr_paths = sorted(list(glob.glob(lr_path + '/*.png')))
@@ -209,14 +210,19 @@ class DataLoaderClassification(data.Dataset):
     def _crop_according_to_smallest(self, image1, image2, image3, image4, scale=4):
         # (FIXED) Added appropriate cropping for GT
         images = [np.array(x) for x in (image1, image2, image3, image4)]
+        height = min([x.shape[0] for x in images])
+        width = min([x.shape[1] for x in images])
+        images = [x[:height, :width] for x in images]
         images[3] = np.transpose(images[3] if images[3].shape[2] == 1 else images[3][:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
         images[3] = torch.from_numpy(images[3]).float().unsqueeze(0)  # CHW-RGB to NCHW-RGB
         _, _, h_old, w_old = images[3].size()
         images[2] = images[2][:h_old * scale, :w_old * scale, ...]  # crop gt
         images[2] = np.squeeze(images[2])
-        height = min([x.shape[0] for x in images])
-        width = min([x.shape[1] for x in images])
-        return [PIL.Image.fromarray(x[:height, :width]) for x in images]
+        images[3] = images[3].detach().cpu().numpy()
+        images[3] = np.transpose(np.squeeze(images[3]))
+        # for idx, img in enumerate(images):
+        #     print(f"IMG {idx}: {img.shape}, {type(img)}")
+        return [PIL.Image.fromarray((i * 255).astype(np.uint8)) for i in images]
         
     def __getitem__(self, index):
         # generate some image pair
@@ -263,13 +269,13 @@ class DataLoaderClassification(data.Dataset):
                 image_lr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr, image_lr, scale=4)
                 mask, signal_mask = self.create_masks(np.array(image_hr), np.array(image_orig), np.array(image_ttt))
                 mask = PIL.Image.fromarray(np.uint8(mask))
-                signal_mask = PIL.Image.fromarray(np.uint8(signal_mask)) 
-                image_orig = self.to_tensor(image_orig)
-                mask = self.to_tensor(mask)
-                signal_mask = self.to_tensor(signal_mask)
-                image_ttt = self.to_tensor(image_ttt)
+                signal_mask = PIL.Image.fromarray(np.uint8(signal_mask))
+                image_orig = self.to_tensor(image_orig).float()
+                mask = self.to_tensor(mask).float()
+                signal_mask = self.to_tensor(signal_mask).float()
+                image_ttt = self.to_tensor(image_ttt).float()
             if self.split == 'train':
-                params = self.random_crop.get_params(image_orig, (48, 48))
+                params = self.random_crop.get_params(image_orig, (self.img_size, self.img_size))
                 signal_mask = T.functional.crop(signal_mask, *params)
             else:
                 signal_mask = self.random_crop(signal_mask) 
@@ -281,7 +287,71 @@ class DataLoaderClassification(data.Dataset):
             image_orig = self.random_crop(image_orig)
             image_ttt = self.random_crop(image_ttt)
             mask = self.random_crop(mask)
+
         return image_orig, image_ttt, mask, signal_mask
 
+    def __len__(self):
+        return len(self.hr_paths)
+
+class DataLoaderRegression(data.Dataset):
+    def __init__(self, hr_path, lr_path, orig_path, ttt_path, split='train', img_size=48):
+        super(DataLoaderRegression, self).__init__()
+        if split == 'train':
+            self.random_crop = RandomCrop(img_size)
+        else:
+            assert split == 'test'
+            self.random_crop = CenterCrop(img_size)
+        self.to_tensor = ToTensor()
+        self.num_workers = 8
+        self._hr_paths = sorted(list(glob.glob(hr_path + '/*.png')))
+        self._lr_paths = sorted(list(glob.glob(lr_path + '/*.png')))
+        self.orig_paths = []
+        self.split = split
+        self.ttt_paths = []
+        self.hr_paths = []
+        self.lr_paths = []
+        for idx, path in enumerate(self._hr_paths):
+            name = os.path.split(path)[-1].replace('.png', '')
+            ttt_image_name = f'{name}.png'
+            orig_image_name = ttt_image_name
+            # Do it once to eliminate cases that don't provide inforamtion:
+            full_orig_path = os.path.join(orig_path, orig_image_name)
+            full_ttt_path = os.path.join(ttt_path, ttt_image_name)
+            self.orig_paths.append(full_orig_path)
+            self.ttt_paths.append(full_ttt_path)
+            self.hr_paths.append(path)
+            self.lr_paths.append(self._lr_paths[idx])
+        
+    def _crop_according_to_smallest(self, image1, image2, image3, image4, scale=4):
+        # (FIXED) Added appropriate cropping for GT
+        images = [np.array(x) for x in (image1, image2, image3, image4)]
+        images[3] = np.transpose(images[3] if images[3].shape[2] == 1 else images[3][:, :, [2, 1, 0]], (2, 0, 1))  # HCW-BGR to CHW-RGB
+        images[3] = torch.from_numpy(images[3]).float().unsqueeze(0)  # CHW-RGB to NCHW-RGB
+        _, _, h_old, w_old = images[3].size()
+        images[2] = images[2][:h_old * scale, :w_old * scale, ...]  # crop gt
+        images[2] = np.squeeze(images[2])
+        height = min([x.shape[0] for x in images])
+        width = min([x.shape[1] for x in images])
+        return [PIL.Image.fromarray(x[:height, :width]) for x in images]
+
+    def __getitem__(self, index):
+        # generate some image pair
+        image_orig = PIL.Image.open(self.orig_paths[index])
+        image_ttt = PIL.Image.open(self.ttt_paths[index])
+        image_hr =  PIL.Image.open(self.hr_paths[index])
+        image_lr = PIL.Image.open(self.lr_paths[index])
+        (image_orig, 
+         image_ttt, 
+         image_hr, 
+         image_lr) = self._crop_according_to_smallest(image_orig, image_ttt, image_hr, image_lr, scale=4)
+        params = self.random_crop.get_params(image_orig, (self.img_size, self.img_size))
+        image_orig = T.functional.crop(image_orig, *params)
+        image_ttt = T.functional.crop(image_ttt, *params)
+        image_orig = self.to_tensor(image_orig)
+        image_ttt = self.to_tensor(image_ttt)
+        image_hr = self.to_tensor(image_hr)
+        return (image_orig, image_ttt), image_hr
+
+    
     def __len__(self):
         return len(self.hr_paths)

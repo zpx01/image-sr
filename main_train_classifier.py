@@ -5,6 +5,8 @@ import sys
 import glob
 import numpy as np
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from models.network_swinir import SwinIR as net
 import os.path
 import time
@@ -15,11 +17,12 @@ import cv2
 import PIL.Image
 import tqdm
 import glob
+import math
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
     parser.add_argument('--num_images', default=10, type=int)
-    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--train_hr_dir', type=str, help='hq location')
     parser.add_argument('--train_lr_dir', type=str, help='lr location')
     parser.add_argument('--train_ttt_dir', type=str, help='ttt location')
@@ -35,12 +38,14 @@ def get_args_parser():
     parser.add_argument('--lr', default=0.00001, type=float, help='Learning rate')
     parser.add_argument('--min_lr', default=0.000001, type=float, help='Min learning rate')
     parser.add_argument('--seed', default=2023, type=int, help='training seed')
-    parser.add_argument('--img_size', default=96, type=int, help='training seed')
+    parser.add_argument('--img_size', default=48, type=int, help='training seed')
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
     parser.add_argument('--warmup_epochs', type=int, default=10, metavar='N',
                         help='epochs to warmup LR')
+    parser.add_argument('--window_size', type=int, default=8, help='SwinIR model window size')
+    parser.add_argument('--opt_type', type=str, default='Adam', help='Optimizer for SwinIR model (SGD/Adam)')
     parser.set_defaults(pin_mem=True)
     return parser
 
@@ -53,8 +58,7 @@ def prep_image(path):
     return torch.from_numpy(image).float()
 
 @torch.no_grad()
-def merge_and_psnr(model, ttt_path, orig_path, gt_path, device, scale=4):
-    # TODO(Zeeshan): Verify that the cropping is right (it is not).
+def merge_and_psnr(model, ttt_path, orig_path, lr_path, gt_path, device, switch_after=1, scale=4):
     model.eval()
     merged_psnrs = []
     merged_ssims = []
@@ -64,15 +68,21 @@ def merge_and_psnr(model, ttt_path, orig_path, gt_path, device, scale=4):
     orig_ssims = []
     soft_merged_psnrs = []
     soft_merged_ssims = []
-    
-    for gt_image_path in tqdm.tqdm(glob.glob(os.path.join(gt_path, '*.png'))):
+    for idx, gt_image_path in enumerate(tqdm.tqdm(glob.glob(os.path.join(gt_path, '*.png')))):
+        # if idx == switch_after:
+        #     device = torch.device("cuda:1")
+        #     model.to(device)
         image_name = os.path.split(gt_image_path)[-1]
-        gt_image = prep_image(gt_image_path).to(device)
+        gt_image = prep_image(gt_image_path)
+        lr_image = prep_image(os.path.join(lr_path, image_name))
+        _, _, h_old, w_old = lr_image.size()
+        gt_image = gt_image[..., :h_old * 4, :w_old * 4]  # crop gt
+        gt_image.to(device)
+        lr_image.to(device) 
         ttt_image = prep_image(os.path.join(ttt_path, image_name)).to(device)
         orig_image = prep_image(os.path.join(orig_path, image_name)).to(device)
-        model_output = model(torch.cat([orig_image, ttt_image], axis=1)) 
+        model_output = model(torch.cat([orig_image, ttt_image], axis=1))
         output = (model_output > 0).float()
-        
         merged = ttt_image * output + orig_image * (1 - output)
         soft_merged = ttt_image * torch.sigmoid(model_output) + orig_image * (1 - torch.sigmoid(model_output))
         gt_image = gt_image[:, :, :merged.shape[2], :merged.shape[3]]
@@ -102,40 +112,40 @@ def merge_and_psnr(model, ttt_path, orig_path, gt_path, device, scale=4):
         ssim_y = util.calculate_ssim(soft_merged, gt_image, crop_border=scale, test_y_channel=True)
         soft_merged_psnrs.append(psnr_y)
         soft_merged_ssims.append(ssim_y)
-        
+
     print('Mean orig psnr:', np.mean(orig_psnrs))
     print('Mean orig ssim:', np.mean(orig_ssims))
     print('Mean ttt psnr:', np.mean(ttt_psnrs))
     print('Mean ttt ssim:', np.mean(ttt_ssims))
-    print('Mean merged psnr:', np.mean(merged_psnrs))
-    print('Mean merged ssim:', np.mean(merged_ssims))
-    print('Soft mean merged psnr:', np.mean(soft_merged_psnrs))
-    print('Soft mean merged ssim:', np.mean(soft_merged_ssims))
+    print('Mean classifier merge psnr:', np.mean(merged_psnrs))
+    print('Mean classifier merge ssim:', np.mean(merged_ssims))
+    print('Soft mean CM psnr:', np.mean(soft_merged_psnrs))
+    print('Soft mean CM ssim:', np.mean(soft_merged_ssims))
 
+def train_worker(args):
+    # Use CUDA if available
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-
-def main(args):
-    # use cuda if available
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    
-    # instantiate model
+    # Instantiate model
     model = net(upscale=1, in_chans=6, out_chans=1, 
-                img_size=args.img_size, window_size=8,
+                img_size=args.img_size, window_size=args.window_size,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6, 6], 
                 embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', 
-                resi_connection='1conv', rescale_back=False)
-    # The model is a bit bigger than the original model (one more layer)
-    best_prec1 = 0
-    
-    print('num_params', sum(p.numel() for p in model.parameters() if p.requires_grad))
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    model = model.to(device)
-    optimizer_to(optimizer, device)
+                resi_connection='1conv', rescale_back=False).to(device)
 
+    # Wrap model with DataParallel
+    model = torch.nn.DataParallel(model)
+
+    # Instantiate loss function and optimizer
+    if args.opt_type == 'Adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.opt_type == 'SGD':
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+    optimizer_to(optimizer, device)
     criterion = torch.nn.BCEWithLogitsLoss(reduction='none').to(device)
 
-    # set random seed
+    # Set random seed
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -145,8 +155,9 @@ def main(args):
     if not os.path.exists(args.output_dir):
          os.mkdir(args.output_dir)
     print(f'Saving to {save_dir}')
-    # TTT checkpoint loop for each test image
-    train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_lr_dir, args.train_pretrain_dir,    
+
+    train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_lr_dir, 
+                                             args.train_pretrain_dir,    
                                              args.train_ttt_dir, threshold=args.threshold,
                                              split='train',
                                              img_size=args.img_size)
@@ -164,17 +175,23 @@ def main(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True,)
+        drop_last=True,
+        collate_fn=custom_collate)
 
     test_data_loader = torch.utils.data.DataLoader(
         test_dataset, sampler=sampler_val,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=False
+        drop_last=False,
+        collate_fn=custom_collate
     )
 
+    # Training loop
+    print("Training Batches:", len(train_data_loader))
+    best_prec1 = 0
     for epoch in range(args.epochs):
+        print(f"Starting epoch {epoch}...")
         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
         print(f'Done training. Epoch [{epoch:05}]: {prec1}')
         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
@@ -187,8 +204,89 @@ def main(args):
             'test_prec1': test_prec1
         }
         print(f'Done testing. Epoch [{epoch:05}]: {test_prec1}')
-        if (epoch + 1) % 50 == 0:
-            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}_{prec1:.2f}_{test_prec1:.2f}.pth')
+        if (epoch + 1) % 2 == 0:
+            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_s{args.img_size}_ep{epoch}_win{args.window_size}_{prec1:.2f}_{test_prec1:.2f}.pth')
+
+
+
+# def main(args):
+#     # use cuda if available
+#     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    
+#     # instantiate model
+#     model = net(upscale=1, in_chans=6, out_chans=1, 
+#                 img_size=args.img_size, window_size=8,
+#                 img_range=1., depths=[6, 6, 6, 6, 6, 6, 6], 
+#                 embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6, 6],
+#                 mlp_ratio=2, upsampler='pixelshuffle', 
+#                 resi_connection='1conv', rescale_back=False)
+#     # The model is a bit bigger than the original model (one more layer)
+#     best_prec1 = 0
+    
+#     print('num_params', sum(p.numel() for p in model.parameters() if p.requires_grad))
+#     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+#     model = model.to(device)
+#     optimizer_to(optimizer, device)
+
+#     criterion = torch.nn.BCEWithLogitsLoss(reduction='none').to(device)
+
+#     # set random seed
+#     random.seed(args.seed)
+#     np.random.seed(args.seed)
+#     torch.manual_seed(args.seed)
+#     torch.cuda.manual_seed_all(args.seed)
+
+#     save_dir = args.output_dir
+#     if not os.path.exists(args.output_dir):
+#          os.mkdir(args.output_dir)
+#     print(f'Saving to {save_dir}')
+#     # TTT checkpoint loop for each test image
+#     train_dataset = DataLoaderClassification(args.train_hr_dir, args.train_lr_dir, args.train_pretrain_dir,    
+#                                              args.train_ttt_dir, threshold=args.threshold,
+#                                              split='train',
+#                                              img_size=args.img_size)
+#     test_dataset = DataLoaderClassification(args.test_hr_dir, args.test_lr_dir,
+#                                             args.test_pretrain_dir, 
+#                                             args.test_ttt_dir, 
+#                                             threshold=args.threshold, split='test',
+#                                             img_size=args.img_size)
+    
+#     sampler_train = torch.utils.data.RandomSampler(train_dataset)
+#     sampler_val = torch.utils.data.SequentialSampler(test_dataset)
+
+#     train_data_loader = torch.utils.data.DataLoader(train_dataset, 
+#         sampler=sampler_train,
+#         batch_size=args.batch_size,
+#         num_workers=args.num_workers,
+#         pin_memory=args.pin_mem,
+#         drop_last=True,
+#         collate_fn=custom_collate)
+
+#     test_data_loader = torch.utils.data.DataLoader(
+#         test_dataset, sampler=sampler_val,
+#         batch_size=args.batch_size,
+#         num_workers=args.num_workers,
+#         pin_memory=args.pin_mem,
+#         drop_last=False,
+#         collate_fn=custom_collate
+#     )
+#     print("Training Batches:", len(train_data_loader))
+
+#     for epoch in range(args.epochs):
+#         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
+#         print(f'Done training. Epoch [{epoch:05}]: {prec1}')
+#         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
+#         best_prec1 = max(prec1, best_prec1)
+#         state_dict = {
+#             'epoch': epoch + 1,
+#             'arch': 'swinir',
+#             'state_dict': model.state_dict(),
+#             'best_prec1': best_prec1,
+#             'test_prec1': test_prec1
+#         }
+#         print(f'Done testing. Epoch [{epoch:05}]: {test_prec1}')
+#         if (epoch + 1) % 50 == 0:
+#             torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_{epoch}_{prec1:.2f}_{test_prec1:.2f}.pth')
 
 
 def optimizer_to(optim, device):
@@ -213,7 +311,7 @@ def test(args, data_loader, model, criterion, epoch, device):
     model.eval()
     losses = AverageMeter()
     acccuracies = AverageMeter()
-    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
+    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(tqdm.tqdm(data_loader)):
         # compute output
         pretrain_input = pretrain_input.to(device, non_blocking=True)
         ttt_input = ttt_input.to(device, non_blocking=True)
@@ -234,7 +332,7 @@ def test(args, data_loader, model, criterion, epoch, device):
     return acccuracies.avg
 
 
-import math
+
 
 def adjust_learning_rate(optimizer, epoch, args):
     """Decay the learning rate with half-cycle cosine after warmup"""
@@ -256,7 +354,7 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
     acccuracies = AverageMeter()
     lr = AverageMeter()
     model.train()
-    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(data_loader):
+    for idx, (pretrain_input, ttt_input, mask, signal_mask) in enumerate(tqdm.tqdm(data_loader)):
         # compute output
         adjust_learning_rate(optimizer, idx / len(data_loader) + epoch, args)
 
@@ -281,9 +379,9 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        print('Epoch: [{0}][{1}]\t'
-                'Loss {loss.val:.4f} ({loss.avg:.4f})\tAcc {acc.val:.4f} ({acc.avg:.4f})\t Lr {lr.val:.4f}'.format(
-                epoch, idx, loss=losses, acc=acccuracies, lr=lr))
+        # print('Epoch: [{0}][{1}]\t'
+        #         'Loss {loss.val:.4f} ({loss.avg:.4f})\tAcc {acc.val:.4f} ({acc.avg:.4f})\t Lr {lr.val:.4f}'.format(
+        #         epoch, idx, loss=losses, acc=acccuracies, lr=lr))
     return acccuracies.avg
 
 
@@ -305,9 +403,26 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-if __name__ == '__main__':
-    args = get_args_parser()
-    args = args.parse_args()
+def custom_collate(batch):
+    # Separate the batch into separate lists
+    image_orig_list, image_ttt_list, mask_list, signal_mask_list = zip(*batch)
+
+    # Stack the tensors along a new dimension
+    image_orig_batch = torch.stack(image_orig_list, dim=0)
+    image_ttt_batch = torch.stack(image_ttt_list, dim=0)
+    mask_batch = torch.stack(mask_list, dim=0)
+    signal_mask_batch = torch.stack(signal_mask_list, dim=0)
+
+    return image_orig_batch, image_ttt_batch, mask_batch, signal_mask_batch
+
+
+def main():
+    # Argument parser
+    parser = get_args_parser()
+    args = parser.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    main(args)
+    train_worker(args)
+
+if __name__ == '__main__':
+    main()
