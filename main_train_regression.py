@@ -233,21 +233,13 @@ def test(args, data_loader, model, criterion, epoch, device):
     
     return avg_loss
 
+def main():
+    # Argument parser
+    parser = get_args_parser()
+    args = parser.parse_args()
+    if args.output_dir:
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    train_worker(args)
 
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+if __name__ == '__main__':
+    main()
