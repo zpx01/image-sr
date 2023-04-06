@@ -18,6 +18,7 @@ import PIL.Image
 import tqdm
 import glob
 import math
+from sklearn.metrics import r2_score
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
@@ -32,7 +33,6 @@ def get_args_parser():
     parser.add_argument('--test_ttt_dir', type=str, help='ttt location')
     parser.add_argument('--test_pretrain_dir', type=str, help='pretrain location')
     parser.add_argument('--output_dir', type=str, help="location for new model checkpoints")
-    parser.add_argument('--threshold', type=float, help="The threshold for the model.")
     parser.add_argument('--batch_size', type=int, default=32, help="Batch size")
     parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--lr', default=0.00001, type=float, help='Learning rate')
@@ -115,7 +115,7 @@ def train_worker(args):
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}...")
         prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
-        print(f'Done training. Epoch [{epoch:05}]: {prec1}')
+        print(f'Done training. Epoch [{epoch:05}]: Loss={prec1}')
         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
         best_prec1 = max(prec1, best_prec1)
         state_dict = {
@@ -125,19 +125,12 @@ def train_worker(args):
             'best_prec1': best_prec1,
             'test_prec1': test_prec1
         }
-        print(f'Done testing. Epoch [{epoch:05}]: {test_prec1}')
+        print(f'Done testing. Epoch [{epoch:05}]: Loss={test_prec1}')
         if (epoch + 1) % 2 == 0:
-            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_s{args.img_size}_ep{epoch}_win{args.window_size}_{prec1:.2f}_{test_prec1:.2f}.pth')
+            torch.save(state_dict['state_dict'], f'{save_dir}/checkpoint_swinir_s{args.img_size}_ep{epoch+1}_win{args.window_size}_{prec1:.2f}_{test_prec1:.2f}.pth')
 
-# TODO: Write training and testing functions
-def train():
-    pass
-
-def test():
-    pass
-
-
-
+def mean_absolute_error(y_true, y_pred):
+    return torch.mean(torch.abs(y_true - y_pred)).item()
 
 def adjust_learning_rate(optimizer, epoch, args):
     """Decay the learning rate with half-cycle cosine after warmup"""
@@ -169,6 +162,78 @@ def optimizer_to(optim, device):
                     subparam.data = subparam.data.to(device)
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)
+
+
+
+def train(args, data_loader, model, optimizer, criterion, epoch, device):
+    loss_vals, mae_vals, r2_scores = [], [], []
+    model.train()
+
+    for idx, (inputs, targets) in enumerate(tqdm.tqdm(data_loader)):
+        adjust_learning_rate(optimizer, idx / len(data_loader) + epoch, args)
+        image_orig, image_ttt = inputs
+        image_orig.to(device)
+        image_ttt.to(device)
+        targets.to(device)
+
+        inputs = torch.cat((image_orig, image_ttt), dim=1)
+
+        outputs = model(inputs)
+
+        loss = criterion(outputs, targets)
+
+        optimizer.zero_grad()
+
+        loss.backward()
+
+        optimizer.step()
+
+        with torch.no_grad():
+            step_loss = loss.item()
+            step_mae = mean_absolute_error(targets, outputs)
+            step_r2 = r2_score(targets.cpu().numpy(), outputs.cpu().numpy())
+
+        loss_vals.append(step_loss)
+        mae_vals.append(step_mae)
+        r2_scores.append(step_r2)
+
+    avg_loss = np.mean(loss_vals)
+    avg_mae = np.mean(mae_vals)
+    avg_r2 = np.mean(r2_scores)
+
+    print(f"Epoch [{epoch + 1}], Loss: {avg_loss:.4f}, MAE: {avg_mae:.4f}, R^2: {avg_r2:.4f}")
+
+    return avg_loss
+
+@torch.no_grad()
+def test(args, data_loader, model, criterion, epoch, device):
+    model.eval()
+    loss_vals, mae_vals, r2_scores = [], [], []
+    for idx, (inputs, targets) in enumerate(tqdm.tqdm(data_loader)):
+        image_orig, image_ttt = inputs
+        image_orig.to(device, non_blocking=True)
+        image_ttt.to(device, non_blocking=True)
+        targets.to(device, non_blocking=True)
+        outputs = model(torch.cat((image_orig, image_ttt), dim=1))
+        loss = criterion(outputs, targets)
+        with torch.no_grad():
+            test_loss = loss.item()
+            test_mae = mean_absolute_error(targets, outputs)
+            test_r2 = r2_score(targets.cpu().numpy(), outputs.cpu().numpy())
+
+        loss_vals.append(test_loss)
+        mae_vals.append(test_mae)
+        r2_scores.append(test_r2)
+
+    avg_loss = np.mean(loss_vals)
+    avg_mae = np.mean(mae_vals)
+    avg_r2 = np.mean(r2_scores)
+    
+    print(f"Epoch [{epoch + 1}], Loss: {avg_loss:.4f}, MAE: {avg_mae:.4f}, R^2: {avg_r2:.4f}")
+    
+    return avg_loss
+
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
