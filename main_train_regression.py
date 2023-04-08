@@ -19,6 +19,8 @@ import tqdm
 import glob
 import math
 from sklearn.metrics import r2_score
+import pytorch_warmup as warmup 
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Training the binary classifier', add_help=False)
@@ -49,17 +51,83 @@ def get_args_parser():
     parser.set_defaults(pin_mem=True)
     return parser
 
+def prep_image(path):
+    image = PIL.Image.open(path)
+    image = np.array(image) / 255.
+    image = image.transpose(2, 0, 1)
+    image = image[np.newaxis,...]
+    return torch.from_numpy(image).float()
+
+@torch.no_grad()
+def reg_and_psnr(model, ttt_path, orig_path, lr_path, gt_path, device, switch_after=1, scale=4):
+    model.eval()
+    reg_psnrs = []
+    reg_ssims = []
+    ttt_psnrs = []
+    ttt_ssims = []
+    orig_psnrs = []
+    orig_ssims = []
+    for idx, gt_image_path in enumerate(tqdm.tqdm(glob.glob(os.path.join(gt_path, '*.png')))):
+        # if idx == switch_after:
+        #     device = torch.device("cuda:1")
+        #     model.to(device)
+        image_name = os.path.split(gt_image_path)[-1]
+        gt_image = prep_image(gt_image_path)
+        lr_image = prep_image(os.path.join(lr_path, image_name))
+        _, _, h_old, w_old = lr_image.size()
+        gt_image = gt_image[..., :h_old * 4, :w_old * 4]  # crop gt
+        gt_image.to(device)
+        lr_image.to(device) 
+        ttt_image = prep_image(os.path.join(ttt_path, image_name)).to(device)
+        orig_image = prep_image(os.path.join(orig_path, image_name)).to(device)
+        model_output = model(torch.cat((orig_image, ttt_image), dim=1))
+        gt_image = gt_image[:, :, :model_output.shape[2], :model_output.shape[3]]
+        assert model_output.shape == gt_image.shape
+        gt_image = (gt_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        model_output = (model_output[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        ttt_image = (ttt_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        orig_image = (orig_image[0].detach().cpu().numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
+        # Merged:
+        psnr_y = util.calculate_psnr(model_output, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(model_output, gt_image, crop_border=scale, test_y_channel=True)
+        reg_psnrs.append(psnr_y)
+        reg_ssims.append(ssim_y)
+        # TTT
+        psnr_y = util.calculate_psnr(ttt_image, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(ttt_image, gt_image, crop_border=scale, test_y_channel=True)
+        ttt_psnrs.append(psnr_y)
+        ttt_ssims.append(ssim_y)
+        # ORIGINAL
+        psnr_y = util.calculate_psnr(orig_image, gt_image, crop_border=scale, test_y_channel=True)
+        ssim_y = util.calculate_ssim(orig_image, gt_image, crop_border=scale, test_y_channel=True)
+        orig_psnrs.append(psnr_y)
+        orig_ssims.append(ssim_y)
+
+    print('Mean orig psnr:', np.mean(orig_psnrs))
+    print('Mean orig ssim:', np.mean(orig_ssims))
+    print('Mean ttt psnr:', np.mean(ttt_psnrs))
+    print('Mean ttt ssim:', np.mean(ttt_ssims))
+    print('Mean regression psnr:', np.mean(reg_psnrs))
+    print('Mean regression ssim:', np.mean(reg_ssims))
+
 def train_worker(args):
     # Use CUDA if available
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # Instantiate model
-    model = net(upscale=1, in_chans=6, out_chans=1, 
+    model = net(upscale=1, in_chans=6, out_chans=3, 
                 img_size=args.img_size, window_size=args.window_size,
                 img_range=1., depths=[6, 6, 6, 6, 6, 6, 6], 
                 embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6, 6],
                 mlp_ratio=2, upsampler='pixelshuffle', 
                 resi_connection='1conv', rescale_back=False).to(device)
+
+    # Set weights of last layer to 0
+    last_layer_name = 'conv_last'
+    getattr(model, last_layer_name).weight.data.zero_()
+
+    # last_layer_weights = getattr(model, last_layer_name).weight
+    # print(f"Weights of the last layer '{last_layer_name}':\n{last_layer_weights}")
 
     # Wrap model with DataParallel
     model = torch.nn.DataParallel(model)
@@ -71,6 +139,9 @@ def train_worker(args):
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
     optimizer_to(optimizer, device)
     criterion = torch.nn.MSELoss().to(device)
+    lr_scheduler = ReduceLROnPlateau(optimizer, 'min')
+    warmup_scheduler = warmup.UntunedLinearWarmup(lr_scheduler)
+    
 
     # Set random seed
     random.seed(args.seed)
@@ -114,7 +185,7 @@ def train_worker(args):
     best_prec1 = 0
     for epoch in range(args.epochs):
         print(f"Starting epoch {epoch}...")
-        prec1 = train(args, train_data_loader, model, optimizer, criterion, epoch, device)
+        prec1 = train(args, train_data_loader, model, optimizer, criterion, lr_scheduler, warmup_scheduler, epoch, device)
         print(f'Done training. Epoch [{epoch:05}]: Loss={prec1}')
         test_prec1 = test(args, test_data_loader, model, criterion, epoch, device)
         best_prec1 = max(prec1, best_prec1)
@@ -165,20 +236,20 @@ def optimizer_to(optim, device):
 
 
 
-def train(args, data_loader, model, optimizer, criterion, epoch, device):
+def train(args, data_loader, model, optimizer, criterion, lr_scheduler, warmup_scheduler, epoch, device):
     loss_vals, mae_vals, r2_scores = [], [], []
     model.train()
 
     for idx, (inputs, targets) in enumerate(tqdm.tqdm(data_loader)):
-        adjust_learning_rate(optimizer, idx / len(data_loader) + epoch, args)
+        # adjust_learning_rate(optimizer, idx / len(data_loader) + epoch, args)
         image_orig, image_ttt = inputs
-        image_orig.to(device)
-        image_ttt.to(device)
-        targets.to(device)
+        image_orig = image_orig.to(device)
+        image_ttt = image_ttt.to(device)
+        targets = targets.to(device)
 
         inputs = torch.cat((image_orig, image_ttt), dim=1)
 
-        outputs = model(inputs)
+        outputs = model(inputs) + image_orig
 
         loss = criterion(outputs, targets)
 
@@ -188,10 +259,13 @@ def train(args, data_loader, model, optimizer, criterion, epoch, device):
 
         optimizer.step()
 
+        with warmup_scheduler.dampening():
+            lr_scheduler.step()
+
         with torch.no_grad():
             step_loss = loss.item()
             step_mae = mean_absolute_error(targets, outputs)
-            step_r2 = r2_score(targets.cpu().numpy(), outputs.cpu().numpy())
+            step_r2 = r2_score(targets.reshape(-1).cpu().numpy(), outputs.reshape(-1).cpu().numpy())
 
         loss_vals.append(step_loss)
         mae_vals.append(step_mae)
@@ -211,15 +285,15 @@ def test(args, data_loader, model, criterion, epoch, device):
     loss_vals, mae_vals, r2_scores = [], [], []
     for idx, (inputs, targets) in enumerate(tqdm.tqdm(data_loader)):
         image_orig, image_ttt = inputs
-        image_orig.to(device, non_blocking=True)
-        image_ttt.to(device, non_blocking=True)
-        targets.to(device, non_blocking=True)
+        image_orig = image_orig.to(device, non_blocking=True)
+        image_ttt = image_ttt.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
         outputs = model(torch.cat((image_orig, image_ttt), dim=1))
         loss = criterion(outputs, targets)
         with torch.no_grad():
             test_loss = loss.item()
             test_mae = mean_absolute_error(targets, outputs)
-            test_r2 = r2_score(targets.cpu().numpy(), outputs.cpu().numpy())
+            test_r2 = r2_score(targets.reshape(-1).cpu().numpy(), outputs.reshape(-1).cpu().numpy())
 
         loss_vals.append(test_loss)
         mae_vals.append(test_mae)
