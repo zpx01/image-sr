@@ -124,7 +124,7 @@ def train_model(args):
 
     criterion = torch.nn.MSELoss().to(device)
     lr_scheduler = ReduceLROnPlateau(optimizer, 'min')
-    warmup_scheduler = warmup.BaseWarmup(optimizer)
+    warmup_scheduler = warmup.BaseWarmup(optimizer, warmup_params=['momentum'])
 
     random.seed(args.seed)
     np.random.seed(args.seed)
